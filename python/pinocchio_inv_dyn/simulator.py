@@ -688,12 +688,13 @@ class Simulator (object):
         ''' check for violations of joint limits '''
         ind_vel = np.where(np.abs(self.v) > self.DQ_MAX)[0].squeeze();
         ind_vel = np.array([ind_vel]) if len(ind_vel.shape)==0 else ind_vel;
-        for i in ind_vel:
-            res = res + [VelocityConstraintViolation(self.t*self.dt, i-7, self.v[i], self.dv[i])];
-            if(self.verb>0):
-                print "[SIMULATOR] %s" % (res[-1].toString());
-            if(self.ENABLE_JOINT_LIMITS):
-                self.v[i] = self.DQ_MAX if (self.v[i]>0.0) else -self.DQ_MAX;
+        if ind_vel != []:
+            for i in ind_vel:
+                res = res + [VelocityConstraintViolation(self.t*self.dt, i-7, self.v[i], self.dv[i])];
+                if(self.verb>0):
+                    print "[SIMULATOR] %s" % (res[-1].toString());
+                if(self.ENABLE_JOINT_LIMITS):
+                    self.v[i] = self.DQ_MAX if (self.v[i]>0.0) else -self.DQ_MAX;
         
         
         ind_pos_ub = (self.q[7:]>self.qMax[7:]+EPS).A.squeeze();

@@ -11,7 +11,7 @@ SAVE_DATA                   = True;
 ''' INITIAL STATE PARAMETERS '''
 MAX_TEST_DURATION           = 3000;
 dt                          = 1e-3;
-model_path                  = ["/home/adelpret/devel/sot_hydro/install/share"];
+model_path                  = ["/opt/openrobots/share"];
 urdfFileName                = model_path[0] + "/hrp2_14_description/urdf/hrp2_14_reduced.urdf";
 freeFlyer                   = True;
 q0 = np.matrix([0.0, 0.0, 0.648702, 0.0, 0.0 , 0.0, 1.0,                             # Free flyer 0-6
