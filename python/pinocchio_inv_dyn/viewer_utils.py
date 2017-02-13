@@ -11,6 +11,10 @@ from pinocchio.utils import cross
 from pinocchio.rpy import matrixToRpy
 from pinocchio import RobotWrapper
 
+from pinocchio_inv_dyn.geom_utils import twodprojection,check_point_in_line
+from pinocchio_inv_dyn.polytope_conversion_utils import poly_face_to_span
+
+
 from time import sleep
 from time import time
 import os
@@ -67,6 +71,32 @@ class Viewer(object):
             newRobot.initDisplay("world/"+robotName, loadModel=False);
             newRobot.viewer.gui.addURDF("world/"+robotName, urdfModelPath, modelPath);
             self.robots[robotName] = newRobot;
+
+    def addPolytope(self, polytope_name, points,robotName='hrp2',color = [0.3,0.7,0.2,1]): 
+        if(ENABLE_VIEWER == False):
+            return np.zeros(0)
+        try:
+            for i in range(self.polytope_lines_p):
+                self.robots[robotName].viewer.gui.deleteNode('world/polytope_'+polytope_name+str(i),False)
+                self.robots[robotName].viewer.gui.refresh()                  
+        except:
+            print(polytope_name+' update first iteration')      
+        print points
+        A,b = twodprojection(points)
+        ps   = poly_face_to_span(-A,b);        
+        self.polytope_lines_p = b.shape[0];  
+        for i in range(self.polytope_lines_p): 
+            line = check_point_in_line(A[i,:], b[i],ps)
+            sh  = line.shape[0]
+            if sh == 2:
+                name = polytope_name+str(i) 
+                while True:
+                    try:
+                        self.robots[robotName].viewer.gui.addLine('world/polytope_'+name, list(line[0])+[-0.02], list(line[1])+[-0.02], color)
+                    except:
+                        print 'Skipping Visualization Exception'
+                    break    
+        return points
                         
     def updateRobotConfig(self, q, robotName='robot1', refresh=True):
         if(ENABLE_VIEWER):
