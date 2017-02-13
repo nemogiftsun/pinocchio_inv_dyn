@@ -72,6 +72,11 @@ USE_LCP_SOLVER                 = False
 ''' STOPPING CRITERIA THRESHOLDS '''
 MAX_CONSTRAINT_ERROR        = 0.1;
 
+'''INERTIAL ERROR'''
+MAX_COM_ERROR = 0.01
+MAX_MASS_ERROR = 0.1
+MAX_INERTIA_ERROR = 0.01
+
 ''' INITIAL STATE PARAMETERS '''
 INITIAL_CONFIG_ID                   = 0;
 INITIAL_CONFIG_FILENAME             = '../../../data/hrp2_configs_coplanar';
