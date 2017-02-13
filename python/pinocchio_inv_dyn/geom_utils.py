@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cdd
 import plot_utils as plut
-from polytope_conversion_utils import poly_face_to_span, NotPolyFace
+from polytope_conversion_utils import poly_face_to_span,poly_span_to_face,NotPolyFace
 
 NUMBER_TYPE = 'float'  # 'float' or 'fraction'
 
@@ -181,3 +181,73 @@ def compute_convex_hull(S):
     H = np.array(P.get_inequalities())
     b, A = H[:, 0], H[:, 1:]
     return (A,b)
+
+def auto_generate_polytopes(num_points,interval,extras=None):
+    '''
+    Auto generate 2 dimensional inequalities from randomly generated points
+    '''
+    dim = len(interval)
+    xinterval = interval[0]
+    yinterval = interval[1]
+    zinterval = interval[2]
+    x = np.random.uniform(xinterval[0],xinterval[1],(1,num_points));
+    y = np.random.uniform(yinterval[0],yinterval[1],(1,num_points));
+    print xinterval   
+    xint = [min(x[0]),max(x[0])]
+    yint = [min(y[0]),max(y[0])]
+    if dim > 2:
+        zinterval = interval[2]
+        z = np.random.uniform(zinterval[0],zinterval[1],(1,num_points));
+        V = np.vstack((x,y,z));
+        zint = [min(z[0]),max(z[0])]
+        interval = [xint,yint,zint]
+    else:
+        V = np.vstack((x,y));
+        interval = [xint,yint]
+    #print 'V shape before conversion'  
+    if extras != None:
+        V = np.hstack((V,extras.T))
+    #print V.shape
+    A,b= poly_span_to_face(V);
+    V= poly_face_to_span(A,b);
+    #print 'V shape after conversion' 
+    #print V.shape
+    A,b= poly_span_to_face(V);
+    return A,b,V,interval
+
+def check_point_polytope(A,b,p):
+    d = np.dot(A,p).T+b;
+    s = np.ones(b.shape[0])*-1e-3
+    res = np.prod(d >= s);
+    if res == 1:
+        return d,True
+    else:
+        return d,False
+
+def twodprojection(V):
+    xyproj = V[0:2,:]  
+    print xyproj
+    A,b= poly_span_to_face(xyproj);
+    V= poly_face_to_span(A,b);
+    return -A,b
+
+def check_point_in_line(A,b,p):
+    ''' 
+    Find two points from the input set 'p' that solves A*p + b = 0
+    
+    '''
+    j = 0;
+    tmp = np.zeros((1,A.shape[0]));
+    for i in range(p.shape[1]):
+        if A.shape[0] >2:
+            point = np.array([p[0][i],p[1][i],p[2][i]])
+        else:
+            point = np.array([p[0][i],p[1][i]])
+        #print point
+        sol = np.dot(A,point)+b;            
+        if sol < 1e-6:
+            tmp = np.resize(tmp,((j+1),A.shape[0]));    
+            tmp[j,:] = point;
+            j = j + 1       
+    return tmp    
+   
