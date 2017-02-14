@@ -81,7 +81,6 @@ class Viewer(object):
                 self.robots[robotName].viewer.gui.refresh()                  
         except:
             print(polytope_name+' update first iteration')      
-        print points
         A,b = twodprojection(points)
         ps   = poly_face_to_span(-A,b);        
         self.polytope_lines_p = b.shape[0];  
