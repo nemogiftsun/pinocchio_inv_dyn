@@ -21,6 +21,12 @@ q0 = np.matrix([0.0, 0.0, 0.648702, 0.0, 0.0 , 0.0, 1.0,                        
                 0.0, 0.0, -0.453785606, 0.872664626, -0.41887902, 0.0,               # LLEG       25-30
                 0.0, 0.0, -0.453785606, 0.872664626, -0.41887902, 0.0,               # RLEG       31-36
                 ]).T;
+                
+q_hslff = np.matrix([ 0.  ,  0.  ,  0.62,  0.  ,  0.  ,  0. ,1 ,  0.  ,  0.  ,
+        0.  ,  0.  ,  0.26,  0.17,  0.  , -0.52,  0.  ,  0.  ,  0.1 ,
+        0.26, -0.17,  0.  , -0.52,  0.  ,  0.  ,  0.1 ,  0.  ,  0.  ,
+       -0.75,  0.87, -0.12,  0.  ,  0.  ,  0.  , -0.15,  0.87, -0.72,  0. ]).T;
+
 v0 = np.matrix(np.zeros(36)).T;
 
 ''' CONTROLLER CONFIGURATION '''
@@ -48,13 +54,25 @@ kp_com      = 10.0;
 kd_com      = 2*sqrt(kp_com);
 kp_ee       = 100.0;
 kd_ee       = 2*sqrt(kp_ee);
+kp_rh       = 100.0;
+kd_rh       = 2*sqrt(kp_ee);
+
+      
 constraint_mask = np.array([True, True, True, True, True, True]).T;
 ee_mask         = np.array([True, True, True, True, True, True]).T;
-
+rh_mask         = np.array([True, True, True, True, True, True]).T;
 # CONTROLLER WEIGTHS
 w_com           = 1;
-w_posture       = 1e-3;  # weight of postural task
+w_posture       = 1e-2;  # weight of postural task
+w_rh            = 1;
 
+
+import pinocchio as se3
+tr = np.matrix((1.3,-0.23,1)).T
+rot = np.matrix(((0.,0.,-1.0),(0.,1.,0.),(1.,0.,0.)))
+rh_des = se3.SE3.Random()
+rh_des.translation = tr
+rh_des.rotation = rot
 # QP SOLVER PARAMETERS
 maxIter = 300;      # max number of iterations
 maxTime = 0.8;      # max computation time for the solver in seconds

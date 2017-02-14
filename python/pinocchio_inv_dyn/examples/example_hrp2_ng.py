@@ -3,6 +3,7 @@ Simple example of how to use this simulation/control environment using HRP-2.
 '''
 import example_hrp2_config_ng as conf
 import pinocchio as se3
+from pinocchio.utils import *
 from pinocchio.utils import zero as mat_zeros
 from pinocchio_inv_dyn.robot_wrapper import RobotWrapper
 from pinocchio_inv_dyn.standard_qp_solver import StandardQpSolver
@@ -10,7 +11,7 @@ from pinocchio_inv_dyn.simulator import Simulator
 import pinocchio_inv_dyn.viewer_utils as viewer_utils
 from pinocchio_inv_dyn.inv_dyn_formulation_util import InvDynFormulation
 from pinocchio_inv_dyn.tasks import SE3Task, CoMTask, JointPostureTask
-from pinocchio_inv_dyn.trajectories import ConstantSE3Trajectory, ConstantNdTrajectory
+from pinocchio_inv_dyn.trajectories import ConstantSE3Trajectory, ConstantNdTrajectory, MinJerkSE3Trajectory
 import pinocchio_inv_dyn.plot_utils as plot_utils
 import cProfile
 import pickle
@@ -90,6 +91,7 @@ def updateConstraints(t, q, v, invDynForm, contacts):
         for j in range(Pi.shape[1]):
             print "    contact point %d in world frame:"%j, oMi.act(Pi[:,j]).T, (oMi.rotation * Ni[:,j]).T;
         invDynForm.addUnilateralContactConstraint(constr, Pi, Ni, conf.fMin, conf.mu);
+        simulator.addUnilateralContactConstraint(constr, Pi, Ni, conf.mu);
 
     return contact_changed;
     
@@ -104,7 +106,7 @@ def startSimulation(q0, v0, solverId):
     torques = np.zeros(na);
 
     t = 0;
-    simulator.reset(t, q0, v0, conf.dt);
+#    simulator.reset(t, q0, v0, conf.dt);
     
     contact_names  = [con.name for con in invDynForm.rigidContactConstraints];
     contact_sizes  = [con.dim for con in invDynForm.rigidContactConstraints];
@@ -113,7 +115,6 @@ def startSimulation(q0, v0, solverId):
 
     for i in range(conf.MAX_TEST_DURATION):        
         invDynForm.setNewSensorData(t, simulator.q, simulator.v);
-        
         (G,glb,gub,lb,ub) = invDynForm.createInequalityConstraints();        
         (D,d)             = invDynForm.computeCostFunction(t);
 
@@ -153,8 +154,9 @@ def startSimulation(q0, v0, solverId):
             no_sol_count[j] += 1;
 
         #simulator.computeForwardDynamicMapping(t);
-        #constrViol[i] = simulator.integrate(t,dt,tau[j][:,i])
-        constrViol[i] = simulator.integrateAcc(t, dt, dv[j][:,i], conf.PLAY_MOTION_WHILE_COMPUTING);        
+
+        constrViol[i] = simulator.integrate(t, dt, tau[j][:,i])
+#        constrViol[i] = simulator.integrateAcc(t, dt, dv[j][:,i], conf.PLAY_MOTION_WHILE_COMPUTING);        
         # update viewer
         #simulator.updateComPositionInViewer(np.matrix([x_com[j][0,i], x_com[j][1,i], 0.]).T);
         simulator.updateCapturePointPositionInViewer(cp[j][:,i],cp_real[j][:,i]);
@@ -210,7 +212,6 @@ def startSimulation(q0, v0, solverId):
 
 
 
-
 ''' *********************** BEGINNING OF MAIN SCRIPT *********************** '''
 COM_DISTANCE = 0.13
 print "Simple example to demonstrate how to use this simulation/control environment using the humanoid robot HRP-2";
@@ -235,7 +236,7 @@ nq = robot.nq;
 nv = robot.nv;
 dt = conf.dt;
 #q0 = se3.randomConfiguration(robot.model, robot.model.lowerPositionLimit, robot.model.upperPositionLimit);
-q0 = conf.q0;
+q0 = conf.q_hslff;
 v0 = conf.v0;
 invDynForm = createInvDynFormUtil(q0, v0);
 simulator = createSimulator(q0, v0);
@@ -261,7 +262,19 @@ posture_task = JointPostureTask(invDynForm.r, posture_traj);
 posture_task.kp = conf.kp_posture;
 posture_task.kv = conf.kd_posture;
 invDynForm.addTask(posture_task, conf.w_posture);
-    
+
+''' CREATE Right hand task ''' 
+fid = invDynForm.getFrameId('RARM_JOINT5');
+oMi = invDynForm.r.framePosition(fid); 
+righthand_traj = MinJerkSE3Trajectory('RARM_JOINT5', oMi, conf.rh_des, conf.dt, 3.0);
+task_rh_hand= SE3Task(invDynForm.r, fid, righthand_traj,'RARM_JOINT5');
+task_rh_hand.kp = conf.kp_rh;
+task_rh_hand.kv = conf.kd_rh;
+task_rh_hand.mask = (conf.rh_mask);  
+invDynForm.addTask(task_rh_hand, conf.w_rh)
+
+simulator.viewer.addSphere('target', 0.03, conf.rh_des.translation, color=(1.0, 0, 0, 1));
+
 ''' CREATE COM TASK '''
 com_des = invDynForm.x_com.copy();
 com_des[1] += COM_DISTANCE;
@@ -269,7 +282,7 @@ com_traj  = ConstantNdTrajectory("com_traj", com_des);
 com_task = CoMTask(invDynForm.r, com_traj);
 com_task.kp = conf.kp_com;
 com_task.kv = conf.kd_com;
-invDynForm.addTask(com_task, conf.w_com);
+#invDynForm.addTask(com_task, conf.w_com);
 
 ''' Compute stats about initial state '''
 (B_sp, b_sp) = invDynForm.getSupportPolygon();
