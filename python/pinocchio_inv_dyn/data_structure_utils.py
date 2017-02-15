@@ -5,7 +5,7 @@ Created on Wed Feb 15 15:06:12 2017
 @author: Andrea Del Prete
 
 """
-
+import numpy as np
 class Bunch:
     def __init__(self, **kwds):
         self.__dict__.update(kwds);
