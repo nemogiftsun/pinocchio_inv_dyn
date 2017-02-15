@@ -152,19 +152,24 @@ class Simulator (object):
 #        self.computeForwardDynamicMapping(t);
         self.INITIALIZE_TORQUE_FILTER = True;
         
-    def __init__(self, name, q, v, fMin, mu, dt, mesh_dir, urdfFileName, freeFlyer=True, detectContactPoint=False):
+    def __init__(self, name, q, v, simulator_configs):
         self.time_step = 0;
-        self.DETECT_CONTACT_POINTS = detectContactPoint;
+        self.DETECT_CONTACT_POINTS = simulator_configs.detectContactPoint;
         self.verb = 0;
         self.name = name;
-        self.mu = mu;
-        self.fMin = fMin;
-        self.freeFlyer = freeFlyer;
+        self.dt = simulator_configs.dt
+        self.mu = simulator_configs.mu;
+        self.fMin = simulator_configs.fMin;
+        self.freeFlyer = simulator_configs.freeFlyer;
         
-        if(freeFlyer):
-            self.r = RobotWrapper(urdfFileName, mesh_dir, se3.JointModelFreeFlyer());
+        if simulator_configs.r_modified == None:
+            if(simulator_configs.freeFlyer):
+                self.r = RobotWrapper(simulator_configs.urdfFileName, simulator_configs.mesh_dir, se3.JointModelFreeFlyer());
+            else:
+                self.r = RobotWrapper(simulator_configs.urdfFileName, simulator_configs.mesh_dir, None);
         else:
-            self.r = RobotWrapper(urdfFileName, mesh_dir, None);
+            self.r = simulator_configs.r_modified
+            
         self.nq = self.r.nq;
         self.nv = self.r.nv;
         self.na = self.nv-6 if self.freeFlyer else self.nv;
@@ -173,7 +178,7 @@ class Simulator (object):
 #                                            constr_lf_fr, constr_lf_fl, constr_lf_hr, constr_lf_hl];
         self.viewer=Viewer(self.name, self.r);
         
-        self.reset(0, q, v, dt);
+        self.reset(0, q, v, self.dt);
         
         self.LCP = StaggeredProjections(self.nv, self.mu[0], accuracy=EPS, verb=0);
         

@@ -13,6 +13,8 @@ from pinocchio_inv_dyn.inv_dyn_formulation_util import InvDynFormulation
 from pinocchio_inv_dyn.tasks import SE3Task, CoMTask, JointPostureTask
 from pinocchio_inv_dyn.trajectories import ConstantSE3Trajectory, ConstantNdTrajectory, MinJerkSE3Trajectory
 import pinocchio_inv_dyn.plot_utils as plot_utils
+from pinocchio_inv_dyn.add_inertial_uncertainties import generate_new_inertial_params
+from pinocchio_inv_dyn.data_structure_utils import Bunch
 import cProfile
 import pickle
 import numpy as np
@@ -34,12 +36,10 @@ def createListOfLists(size1, size2):
         l[i] = size2*[None,];
     return l;
     
-def createInvDynFormUtil(q, v):
-    inertial_error = [conf.MAX_MASS_ERROR,conf.MAX_COM_ERROR,conf.MAX_INERTIA_ERROR]
+def createInvDynFormUtil(q, v,invdyn_configs):
     invDynForm = InvDynFormulation('inv_dyn'+datetime.now().strftime('%m%d_%H%M%S'), 
-                                   q, v, conf.dt, conf.model_path, conf.urdfFileName, inertial_error, conf.freeFlyer);
-                                   
-    invDynForm.enableCapturePointLimits(conf.ENABLE_CAPTURE_POINT_LIMITS);
+                                   q, v, invdyn_configs);                                   
+    invDynForm.enableCapturePointLimitsRobust(conf.ENABLE_CAPTURE_POINT_LIMITS);
     invDynForm.enableTorqueLimits(conf.ENABLE_TORQUE_LIMITS);
     invDynForm.enableForceLimits(conf.ENABLE_FORCE_LIMITS);
     invDynForm.enableJointLimits(conf.ENABLE_JOINT_LIMITS, conf.IMPOSE_POSITION_BOUNDS, conf.IMPOSE_VELOCITY_BOUNDS, 
@@ -49,13 +49,11 @@ def createInvDynFormUtil(q, v):
     invDynForm.MAX_JOINT_ACC                = conf.MAX_JOINT_ACC;
     invDynForm.MAX_MIN_JOINT_ACC            = conf.MAX_MIN_JOINT_ACC;
     invDynForm.USE_JOINT_VELOCITY_ESTIMATOR = conf.USE_JOINT_VELOCITY_ESTIMATOR;
-    invDynForm.ACCOUNT_FOR_ROTOR_INERTIAS   = conf.ACCOUNT_FOR_ROTOR_INERTIAS;
-    #print invDynForm.r.model    
+    invDynForm.ACCOUNT_FOR_ROTOR_INERTIAS   = conf.ACCOUNT_FOR_ROTOR_INERTIAS;  
     return invDynForm;
 
-def createSimulator(q0, v0):
-    simulator  = Simulator('hrp2_sim'+datetime.now().strftime('%Y%m%d_%H%M%S')+str(np.random.random()), 
-                                   q0, v0, conf.fMin, conf.mu, conf.dt, conf.model_path, conf.urdfFileName);
+def createSimulator(q0, v0,simulator_configs):
+    simulator  = Simulator('hrp2_sim'+datetime.now().strftime('%Y%m%d_%H%M%S')+str(np.random.random()),q0,v0,simulator_configs);
     simulator.viewer.CAMERA_FOLLOW_ROBOT = False;
     simulator.USE_LCP_SOLVER = conf.USE_LCP_SOLVER;
     simulator.ENABLE_TORQUE_LIMITS = conf.FORCE_TORQUE_LIMITS;
@@ -123,7 +121,7 @@ def startSimulation(q0, v0, solverId):
         x_com[j][:,i]     = np.matrix.copy(invDynForm.x_com);       # from the solver view-point
         dx_com[j][:,i]    = np.matrix.copy(invDynForm.dx_com);      # from the solver view-point
         cp[j][:,i]        = np.matrix.copy(invDynForm.cp);          # from the solver view-point
-        cp_real[j][:,i]   = np.matrix.copy(invDynForm.cp_modified);
+        #cp_real[j][:,i]   = np.matrix.copy(invDynForm.cp_modified);
         ang_mom[j,i]      = norm(invDynForm.getAngularMomentum());
         
         if(i%500==0):
@@ -159,7 +157,7 @@ def startSimulation(q0, v0, solverId):
 #        constrViol[i] = simulator.integrateAcc(t, dt, dv[j][:,i], conf.PLAY_MOTION_WHILE_COMPUTING);        
         # update viewer
         #simulator.updateComPositionInViewer(np.matrix([x_com[j][0,i], x_com[j][1,i], 0.]).T);
-        simulator.updateCapturePointPositionInViewer(cp[j][:,i],cp_real[j][:,i]);
+        simulator.updateCapturePointPositionInViewer(cp[j][:,i],cp[j][:,i]);#cp_real
         f              = y[nv:nv+invDynForm.k];
         contact_forces = [ f[ii:ii+3] for ii in contact_size_cum];
         simulator.updateContactForcesInViewer(contact_names, contact_points, contact_forces);
@@ -236,10 +234,34 @@ nq = robot.nq;
 nv = robot.nv;
 dt = conf.dt;
 #q0 = se3.randomConfiguration(robot.model, robot.model.lowerPositionLimit, robot.model.upperPositionLimit);
+#q0 = conf.q0;
 q0 = conf.q_hslff;
 v0 = conf.v0;
-invDynForm = createInvDynFormUtil(q0, v0);
-simulator = createSimulator(q0, v0);
+
+
+
+
+
+
+#create invdyn form util
+invdyn_configs = Bunch(dt = None, mesh_dir = None, urdfFileName = None, freeFlyer=True,vcom = None,ncom=None,inertiaError=[0,0,0])
+invdyn_configs.dt = conf.dt
+invdyn_configs.mesh_dir = conf.model_path
+invdyn_configs.urdfFileName = conf.urdfFileName
+invdyn_configs.freeFlyer = conf.freeFlyer
+invdyn_configs.inertiaError=[conf.MAX_MASS_ERROR,conf.MAX_COM_ERROR,conf.MAX_INERTIA_ERROR]
+simulator_configs = Bunch(dt=None, model_path=None, freeFlyer = False,urdfFileName=None, fMin=None, mu=None,detectContactPoint=False,r_modified=None)
+invdyn_configs.vcom,invdyn_configs.ncom,simulator_configs.r_modified = generate_new_inertial_params(conf.MAX_MASS_ERROR,conf.MAX_COM_ERROR,conf.MAX_INERTIA_ERROR)
+invDynForm = createInvDynFormUtil(q0, v0,invdyn_configs);
+# create sim
+simulator_configs.fMin=conf.fMin;
+simulator_configs.mu=conf.mu;
+simulator_configs.dt=conf.dt;
+simulator_configs.freeFlyer = conf.freeFlyer
+simulator_configs.mesh_dir=conf.model_path;
+simulator_configs.urdfFileName=conf.urdfFileName;
+simulator = createSimulator(q0, v0,simulator_configs);
+
 robot = invDynForm.r;
 na = invDynForm.na;    # number of joints
 simulator.viewer.setVisibility("floor", "ON" if conf.SHOW_VIEWER_FLOOR else "OFF");
@@ -271,7 +293,7 @@ task_rh_hand= SE3Task(invDynForm.r, fid, righthand_traj,'RARM_JOINT5');
 task_rh_hand.kp = conf.kp_rh;
 task_rh_hand.kv = conf.kd_rh;
 task_rh_hand.mask = (conf.rh_mask);  
-invDynForm.addTask(task_rh_hand, conf.w_rh)
+#invDynForm.addTask(task_rh_hand, conf.w_rh)
 
 simulator.viewer.addSphere('target', 0.03, conf.rh_des.translation, color=(1.0, 0, 0, 1));
 
@@ -282,7 +304,7 @@ com_traj  = ConstantNdTrajectory("com_traj", com_des);
 com_task = CoMTask(invDynForm.r, com_traj);
 com_task.kp = conf.kp_com;
 com_task.kv = conf.kd_com;
-#invDynForm.addTask(com_task, conf.w_com);
+invDynForm.addTask(com_task, conf.w_com);
 
 ''' Compute stats about initial state '''
 (B_sp, b_sp) = invDynForm.getSupportPolygon();

@@ -14,6 +14,7 @@ from pinocchio_inv_dyn.inv_dyn_formulation_util import InvDynFormulation
 from pinocchio_inv_dyn.tasks import SE3Task, CoMTask, JointPostureTask
 from pinocchio_inv_dyn.trajectories import ConstantSE3Trajectory, ConstantNdTrajectory
 import pinocchio_inv_dyn.plot_utils as plot_utils
+from pinocchio_inv_dyn.data_structure_utils import Bunch
 
 import cProfile
 import pickle
@@ -36,9 +37,9 @@ def createListOfLists(size1, size2):
         l[i] = size2*[None,];
     return l;
     
-def createInvDynFormUtil(q, v):
+def createInvDynFormUtil(q, v,invdyn_configs):
     invDynForm = InvDynFormulation('inv_dyn'+datetime.now().strftime('%m%d_%H%M%S'), 
-                                   q, v, conf.dt, conf.model_path, conf.urdfFileName, conf.freeFlyer);
+                                   q, v, invdyn_configs);
     invDynForm.enableCapturePointLimits(conf.ENABLE_CAPTURE_POINT_LIMITS);
     invDynForm.enableTorqueLimits(conf.ENABLE_TORQUE_LIMITS);
     invDynForm.enableForceLimits(conf.ENABLE_FORCE_LIMITS);
@@ -55,9 +56,10 @@ def createInvDynFormUtil(q, v):
     return invDynForm;
 
 
-def createSimulator(q0, v0):
+
+def createSimulator(q0, v0,simulator_configs):
     simulator  = Simulator('hrp2_sim'+datetime.now().strftime('%Y%m%d_%H%M%S')+str(np.random.random()), 
-                                   q0, v0, conf.fMin, conf.mu, conf.dt, conf.model_path, conf.urdfFileName);
+                                   q0, v0, simulator_configs );
     simulator.viewer.CAMERA_FOLLOW_ROBOT = False;
     simulator.USE_LCP_SOLVER = conf.USE_LCP_SOLVER;
     simulator.ENABLE_TORQUE_LIMITS = conf.FORCE_TORQUE_LIMITS;
@@ -153,12 +155,12 @@ def startSimulation(q0, v0, solverId):
 
         if(np.isnan(torques).any() or np.isinf(torques).any()):
             no_sol_count[j] += 1;
-
-        constrViol[i] = simulator.integrateAcc(t, dt, dv[j][:,i], fc[j][:,i], tau[j][:,i], conf.PLAY_MOTION_WHILE_COMPUTING);
+            
+        constrViol[i] = simulator.integrateAcc(t, dt, dv[j][:,i],  conf.PLAY_MOTION_WHILE_COMPUTING);
         
         # update viewer
         simulator.updateComPositionInViewer(np.matrix([x_com[j][0,i], x_com[j][1,i], 0.]).T);
-        simulator.updateCapturePointPositionInViewer(cp[j][:,i]);
+        simulator.updateCapturePointPositionInViewer(cp[j][:,i],cp[j][:,i]);
         f              = y[nv:nv+invDynForm.k];
         contact_forces = [ f[ii:ii+3] for ii in contact_size_cum];
         simulator.updateContactForcesInViewer(contact_names, contact_points, contact_forces);
@@ -234,8 +236,25 @@ dt = conf.dt;
 #q0 = se3.randomConfiguration(robot.model, robot.model.lowerPositionLimit, robot.model.upperPositionLimit);
 q0 = conf.q0;
 v0 = conf.v0;
-invDynForm = createInvDynFormUtil(q0, v0);
-simulator = createSimulator(q0, v0);
+
+
+# create invdynform util
+invdyn_configs = Bunch(dt = None,mesh_dir = None, urdfFileName = None, freeFlyer=None,vcom = None,ncom=None,inertiaError=[0,0,0])
+invdyn_configs.dt = conf.dt;
+invdyn_configs.mesh_dir = conf.model_path;
+invdyn_configs.urdfFileName = conf.urdfFileName
+invdyn_configs.freeFlyer = conf.freeFlyer
+invDynForm = createInvDynFormUtil(q0, v0,invdyn_configs);
+
+# create sim
+simulator_configs = Bunch(dt=None, freeFlyer = False,mesh_dir=None, urdfFileName=None, fMin=None, mu=None, detectContactPoint=False,r_modified=None)
+simulator_configs.fMin=conf.fMin;
+simulator_configs.mu=conf.mu;
+simulator_configs.dt=conf.dt;
+simulator_configs.freeFlyer = conf.freeFlyer
+simulator_configs.mesh_dir=conf.model_path;
+simulator_configs.urdfFileName=conf.urdfFileName;
+simulator = createSimulator(q0, v0,simulator_configs);
 robot = invDynForm.r;
 na = invDynForm.na;    # number of joints
 simulator.viewer.setVisibility("floor", "ON" if conf.SHOW_VIEWER_FLOOR else "OFF");

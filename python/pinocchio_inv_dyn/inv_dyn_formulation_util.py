@@ -1,7 +1,8 @@
 import numpy as np
 from numpy.linalg import norm
 from numpy.random import random
-from polytope_conversion_utils import cone_span_to_face
+from pinocchio_inv_dyn.geom_utils import check_point_polytope
+from pinocchio_inv_dyn.polytope_conversion_utils import poly_face_to_span,poly_span_to_face,cone_span_to_face
 from pinocchio_inv_dyn.robot_wrapper import RobotWrapper
 import pinocchio as se3
 from pinocchio.utils import zero as zeros
@@ -11,8 +12,8 @@ from first_order_low_pass_filter import FirstOrderLowPassFilter
 from convex_hull_util import compute_convex_hull, plot_convex_hull
 from geom_utils import plot_polytope
 from multi_contact.utils import compute_GIWC, compute_support_polygon
-
 EPS = 1e-4;
+    
     
 class InvDynFormulation (object):
     name = '';
@@ -20,8 +21,13 @@ class InvDynFormulation (object):
     
     ENABLE_JOINT_LIMITS         = True;
     ENABLE_CAPTURE_POINT_LIMITS = False;
+    ENABLE_CAPTURE_POINT_LIMITS_ROBUST = False;
     ENABLE_TORQUE_LIMITS        = True;
     ENABLE_FORCE_LIMITS         = True;
+
+    #MAX_COM_ERROR = 0.0
+    #MAX_MASS_ERROR = 0.0
+    #MAX_INERTIA_ERROR = 0.0
     
     USE_JOINT_VELOCITY_ESTIMATOR = False;
     BASE_VEL_FILTER_CUT_FREQ = 5;
@@ -113,6 +119,10 @@ class InvDynFormulation (object):
     rigidContactConstraints_m_in = [];  # number of inequalities
     bilateralContactConstraints = [];
 
+    V = None
+    N = None
+    vcom = []
+    
     tasks = [];
     task_weights = [];
     
@@ -126,13 +136,12 @@ class InvDynFormulation (object):
     
     def updateInequalityData(self, updateConstrainedDynamics=True):
         self.updateSupportPolygon();
-        
         self.m_in = 0;                              # number of inequalities
         c = len(self.rigidContactConstraints);      # number of unilateral contacts
         self.k = int(np.sum([con.dim for con in self.rigidContactConstraints]));
         self.k += int(np.sum([con.dim for con in self.bilateralContactConstraints]));
         if(self.ENABLE_FORCE_LIMITS):
-            self.rigidContactConstraints_m_in = np.zeros(c, np.int);
+            self.rigidContactConstraints_m_in = np.matlib.zeros(c, np.int);
             Bf = zeros((0,self.k));
             bf = zeros(0);
             ii = 0;
@@ -140,7 +149,7 @@ class InvDynFormulation (object):
                 (Bfi, bfi) = self.createContactForceInequalities(self.rigidContactConstraints_fMin[i], self.rigidContactConstraints_mu[i], \
                                                                  self.rigidContactConstraints_p[i], self.rigidContactConstraints_N[i], \
                                                                  self.rigidContactConstraints[i].framePosition().rotation);
-                self.rigidContactConstraints_m_in[i] = Bfi.shape[0];
+                self.rigidContactConstraints_m_in[0,i] = Bfi.shape[0];
                 tmp = zeros((Bfi.shape[0], self.k));
                 dim = self.rigidContactConstraints[i].dim;
                 mask = self.rigidContactConstraints[i]._mask;
@@ -166,7 +175,7 @@ class InvDynFormulation (object):
             self.lb = zeros(self.na) - 1e100;
             self.ub = zeros(self.na) + 1e100;
             
-        if(self.ENABLE_CAPTURE_POINT_LIMITS):
+        if(self.ENABLE_CAPTURE_POINT_LIMITS or self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST):
             self.ind_cp_in = range(self.m_in, self.m_in+self.b_sp.size);
             self.m_in += self.b_sp.size;
         else:
@@ -194,24 +203,25 @@ class InvDynFormulation (object):
             self.updateConstrainedDynamics();
         
     
-    def __init__(self, name, q, v, dt, mesh_dir, urdfFileName, freeFlyer=True):
-        if(freeFlyer):
-            self.r = RobotWrapper(urdfFileName, mesh_dir, root_joint=se3.JointModelFreeFlyer());
+    def __init__(self, name, q, v,invdyn_configs):
+        self.firstTime = True; 
+        if(invdyn_configs.freeFlyer):
+            self.r = RobotWrapper(invdyn_configs.urdfFileName, invdyn_configs.mesh_dir, root_joint=se3.JointModelFreeFlyer());
         else:
-            self.r = RobotWrapper(urdfFileName, mesh_dir, None);
-        self.freeFlyer = freeFlyer;
+            self.r = RobotWrapper(invdyn_configs.urdfFileName, invdyn_configs.mesh_dir, None);
+        self.freeFlyer = invdyn_configs.freeFlyer;
         self.nq = self.r.nq;
         self.nv = self.r.nv;
         self.na = self.nv-6 if self.freeFlyer else self.nv;
         self.k = 0;        # number of constraints
-        self.dt = dt;
+        self.dt = invdyn_configs.dt;
         self.t = 0.0;
         self.name = name;
         self.Md = zeros((self.na,self.na)); #np.diag([ g*g*i for (i,g) in zip(INERTIA_ROTOR,GEAR_RATIO) ]); # rotor inertia
-        
+        self.dJ_com      = zeros((3,self.nv));
         ''' create low-pass filter for base velocities '''
-        self.baseVelocityFilter = FirstOrderLowPassFilter(dt, self.BASE_VEL_FILTER_CUT_FREQ , zeros(6));            
-        if(freeFlyer):
+        self.baseVelocityFilter = FirstOrderLowPassFilter(self.dt, self.BASE_VEL_FILTER_CUT_FREQ , zeros(6));            
+        if(invdyn_configs.freeFlyer):
             self.S_T         = zeros((self.nv,self.na));
             self.S_T[6:, :]  = np.matlib.eye(self.na);
         else:
@@ -232,10 +242,87 @@ class InvDynFormulation (object):
                         
         self.contact_points = zeros((0,3));
         self.updateInequalityData(updateConstrainedDynamics=False);
-        self.setNewSensorData(0, q, v);        
+        self.setNewSensorData(0, q, v);   
+        self.inertiaError = invdyn_configs.inertiaError;
+        self.V,self.N = invdyn_configs.vcom,invdyn_configs.ncom
+    #WORK NEED TO BE DONE#    
+    def computeGlobalCOMPolytope(self,V,N):
+        # initialize params
+        joint_ns = 31     
+        #flagged_ns = len(self.r.mass)
+        vlinks_sum= np.zeros((2,self.B_sp.shape[0]))
+        # works only when map_index shape equals the number of polytope
+        totalmass = 0
+        for i in range(joint_ns):
+            a = int(np.sum(N[0:i]))
+            b = int(N[i]+a) 
+            vlink = np.zeros((3,int(N[i])))
+            m = 0
+            for j in range(a,b):
+                vlink[:,m] = np.array(self.r.data.oMi[i+1].act(np.matrix(V[:,j]).T)).T
+                m += 1
+            while True:
+                try:
+                    Av,bv = poly_span_to_face(vlink)
+                except:
+                    r = np.ones((vlink.shape[0],vlink.shape[1]))*1e-1;
+                    vlink = vlink +r    
+                    print '---Exception----'
+                    print i
+                    print '----------------'
+                    continue     
+                break 
+            # multiply with mass
+            mass_links_bound = [self.r.model.inertias[i+1].mass-(self.r.model.inertias[i+1].mass*self.MAX_MASS_ERROR),self.r.model.inertias[i+1].mass+(self.r.model.inertias[i+1].mass*self.MAX_MASS_ERROR)]  
+            V_mlb = mass_links_bound[0]*vlink
+            V_mhb = mass_links_bound[1]*vlink
+            V_link = np.hstack((V_mhb,V_mlb))
+            while True:
+                try:
+                    Alink,blink = compute_convex_hull(V_link[0:2,:])
+                    V_link = poly_face_to_span(-Alink,blink)
+                except:
+                    vadd = np.ones((V_link.shape[0],V_link.shape[1]))*1e3
+                    V_link += vadd
+                    print 'Numerical Inconsistency'
+                    return self.vcom,self.vdcom
+                break        
+            vlinknew = np.zeros((2,self.B_sp.shape[0]))
+            for k in range(self.B_sp.shape[0]):
+                ### com ###
+                # find out vertex that minimizes the dot product of each face with the vertices.
+                index_com = np.argmin(np.dot(self.B_sp[k,:],V_link))
+                # update the newly approximated polytope
+                vlinknew[:,k] = np.copy(np.matrix(V_link[:,index_com]))   
+            vlinks_sum += vlinknew    
+            vlever = self.r.data.oMi[i+1].act(self.r.model.inertias[i+1].lever)*self.r.model.inertias[i+1].mass
+            Aln,bln = compute_convex_hull(vlinknew)
+            d,res1 = check_point_polytope(Aln,bln,vlever[0:2]) 
+            totalmass += self.r.model.inertias[i+1].mass
+
+        vcomc = (1/totalmass)*vlinks_sum
+        Aln,bln = compute_convex_hull(vcomc)
         
-        
-        
+        vdcomc = np.zeros((vcomc.shape[0],vcomc.shape[1]))
+        for k in range(vcomc.shape[1]):
+            comxy = np.copy(vcomc[:,k])
+            vdcomc[:,k] =comxy + np.array(self.dx_com[0:2]/np.sqrt(9.81/self.x_com[2])).T
+            #vdcomc[:,k] =  comxy + self.dx_com[0:2]/np.sqrt(9.81/self.x_com[2]) 
+           
+        d,res1 = check_point_polytope(Aln,bln,self.com_pinocchio[0:2]) 
+        if res1 == False:
+            print 'The global com polytope doesnt contain the nominal com '
+            for m in range(d.shape[1]):
+                 print d[0,m]
+            #(ax,l) =  plot_polytope(Aln, bln, V=None,color='ordered',ax=None,lw=2,dots=False)  
+            #ax.scatter(self.compinocchio[0,0],self.compinocchio[1,0],400,color=COLOR[34],marker='o',label=str(4))              
+        return vcomc,vdcomc              
+      
+    def updateGlobalCOMPolytope(self):
+        #q = toPinocchio(self.q)
+        self.com_pinocchio = se3.centerOfMass(self.r.model,self.r.data,self.q,True)
+        self.vcom,self.vdcom = self.computeGlobalCOMPolytope(self.V,self.N)
+                
     def getFrameId(self, frameName):
         if(self.r.model.existFrame(frameName)==False):
             raise NameError("[InvDynFormUtil] ERROR: frame %s does not exist!"%frameName);
@@ -300,10 +387,10 @@ class InvDynFormulation (object):
     def updateSupportPolygon(self):
         ''' Compute contact points and contact normals in world frame '''
         ncp = int(np.sum([p.shape[1] for p in self.rigidContactConstraints_p]));
+        #print self.rigidContactConstraints_p
         self.contact_points  = zeros((3,ncp));
         self.contact_normals = zeros((3,ncp));
         mu_s = zeros(ncp);
-        
         i = 0;
         for (constr, P, N, mu) in zip(self.rigidContactConstraints, self.rigidContactConstraints_p, 
                                       self.rigidContactConstraints_N, self.rigidContactConstraints_mu):
@@ -312,7 +399,7 @@ class InvDynFormulation (object):
                 self.contact_points[:,i]  = oMi.act(P[:,j]);
                 self.contact_normals[:,i] = oMi.rotation * N[:,j];
                 mu_s[i,0] = mu[0];
-                i += 1;
+                i += 1;      
                 
         if(ncp==0 or not self.COMPUTE_SUPPORT_POLYGON):
             self.B_sp = zeros((0,2));
@@ -326,8 +413,7 @@ class InvDynFormulation (object):
             else:
                 (H,h) = compute_GIWC(self.contact_points.T, self.contact_normals.T, mu_s);
                 (self.B_sp, self.b_sp) = compute_support_polygon(H, h, self.M[0,0], np.array([0.,0.,-9.81]), eliminate_redundancies=True);
-                self.B_sp *= -1.0;                
-            
+                self.B_sp *= -1.0; 
             # normalize inequalities
             for i in range(self.B_sp.shape[0]):
                 tmp = np.linalg.norm(self.B_sp[i,:]);
@@ -377,7 +463,15 @@ class InvDynFormulation (object):
     def enableCapturePointLimits(self, enable=True):
         self.ENABLE_CAPTURE_POINT_LIMITS = enable;
         self.updateInequalityData();
-    
+
+    def enableCapturePointLimitsRobust(self, enable=True):
+        self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST = enable;
+        self.MAX_MASS_ERROR = self.inertiaError[0]
+        self.MAX_COM_ERROR = self.inertiaError[1]
+        self.MAX_INERTIA_ERROR = self.inertiaError[2]           
+        self.updateInequalityData();
+      
+   
     ''' ********** SET ROBOT STATE ********** '''
     def setPositions(self, q, updateConstraintReference=True):
         self.q = np.matrix.copy(q);
@@ -386,7 +480,7 @@ class InvDynFormulation (object):
             if(self.USE_JOINT_VELOCITY_ESTIMATOR):
                 raise Exception("Joint velocity estimator not implemented yet");
                 self.estimator.init(self.dt,self.JOINT_VEL_ESTIMATOR_DELAY,self.JOINT_VEL_ESTIMATOR_DELAY,self.JOINT_VEL_ESTIMATOR_DELAY,self.JOINT_VEL_ESTIMATOR_DELAY,True);
-                self.baseVelocityFilter = FirstOrderLowPassFilter(self.dt, self.BASE_VEL_FILTER_CUT_FREQ , np.zeros(6));
+                self.baseVelocityFilter = FirstOrderLowPassFilter(self.dt, self.BASE_VEL_FILTER_CUT_FREQ , zeros(6));
             self.r.forwardKinematics(q);
             for c in self.rigidContactConstraints:
                 Mref = self.r.position(q, c._link_id, update_geometry=False);
@@ -398,6 +492,8 @@ class InvDynFormulation (object):
                 Mref = self.r.position(q, c._link_id, update_geometry=False);
                 c.refTrajectory.setReference(Mref);
             self.updateSupportPolygon();
+            self.firstTime = True
+            self.dJ_com = zeros((3,self.n+6)); 
             
         return self.q;
     
@@ -415,8 +511,15 @@ class InvDynFormulation (object):
         
         self.r.computeAllTerms(q, v);
         self.r.framesKinematics(q);
-        self.x_com    = self.r.com(q, update_kinematics=False);
-        self.J_com    = self.r.Jcom(q, update_kinematics=False);
+        self.x_com    = self.r.com(q, update_kinematics=True);
+
+        if(self.firstTime==False):
+            self.dJ_com   = (self.r.Jcom(q, update_kinematics=False) - self.J_com)/self.dt;  
+        self.J_com    = self.r.Jcom(q, update_kinematics=False);    
+        
+
+          
+        self.dd_com        = np.dot(self.dJ_com, self.v);
         self.M        = self.r.mass(q, update_kinematics=False);
         self.Ag       = self.r.momentumJacobian(q, v);
         if(self.ACCOUNT_FOR_ROTOR_INERTIAS):
@@ -427,12 +530,27 @@ class InvDynFormulation (object):
         self.h        = self.r.bias(q,v, update_kinematics=False);
 #        self.h          += self.JOINT_FRICTION_COMPENSATION_PERCENTAGE*np.dot(np.array(JOINT_VISCOUS_FRICTION), self.v);
         self.dx_com     = np.dot(self.J_com, self.v);
+
+
+         # CHECK WITH JUSTIN
+        '''
+        if self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST == True:
+            self.x_com_modified = self.r_modified.com(q, update_kinematics=True)       
+            self.J_com_modified    = self.r_modified.Jcom(q, update_kinematics=False);
+            self.dx_com_modified     = np.dot(self.J_com_modified, self.v);        
+        '''    
         com_z           = self.x_com[2]; #-np.mean(self.contact_points[:,2]);
         if(com_z>0.0):
             self.cp         = self.x_com[:2] + self.dx_com[:2]/np.sqrt(9.81/com_z);
+            #if self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST == True:
+            #    self.cp_modified = self.x_com_modified[:2] + self.dx_com[:2]/np.sqrt(9.81/com_z);
         else:
             self.cp = zeros(2);
+            #self.cp_modified = zeros(2);
+        #if self.V != None and self.B_sp != np.zeros((0,2)) and self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST == True:
+        #    self.updateGlobalCOMPolytope()     
         self.updateConstrainedDynamics();
+        self.firstTime = False;
         
 
     def updateConstrainedDynamics(self):
@@ -530,14 +648,26 @@ class InvDynFormulation (object):
     '''
     def createCapturePointInequalities(self, footSizes = None):    
         dt      = self.dt;
-        omega   = np.sqrt(9.81/self.x_com[2]);
+        omega   = np.sqrt(9.81/self.x_com[2])[0,0];
         x_com   = self.x_com[0:2];  # only x and y coordinates
         dx_com  = self.dx_com[0:2];
-    
         B    = (0.5*dt*dt + dt/omega)*np.dot(self.B_sp, self.J_com[0:2,:]);
         b    = self.b_sp + np.dot(self.B_sp, x_com + (dt+1/omega)*dx_com);
         return (B,b);
         
+    def createCapturePointInequalitiesRobust(self, footSizes = None):  
+        self.updateGlobalCOMPolytope() 
+        dt      = self.dt;
+        omega   = np.sqrt(9.81/self.x_com[2])[0,0];
+        x_com   = self.x_com[0:2];  # only x and y coordinates
+        dx_com  = self.dx_com[0:2];
+        B    = (0.5*dt*dt + dt/omega)*np.dot(self.B_sp, self.J_com[0:2,:]);
+        # B_sp are the normals defining the directions of interest in a support polygon.
+        # x_com and dx_com should correspond to maximum regions points of the the capture polygon
+        c    = np.copy(self.b_sp);
+        for i in range(self.B_sp.shape[0]):
+            c[i] = c[i] + np.dot(np.array(self.B_sp[i,:]),np.array(self.vcom[:,i]+ ((dt+1/omega)*dx_com+((0.5*dt*dt + dt/omega)*self.dd_com[0:2])).T).T);         
+        return (B,c);         
 
     def createJointAccInequalitiesViability(self):
         n  = self.na;
@@ -611,8 +741,12 @@ class InvDynFormulation (object):
             self.B[self.ind_acc_in, 6:n+6]      = B_q;
             self.b[self.ind_acc_in]             = b_q;
             
-        if(self.ENABLE_CAPTURE_POINT_LIMITS):
-            (B_cp, b_cp) = self.createCapturePointInequalities();
+        if(self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST):
+            (B_cp, b_cp) = self.createCapturePointInequalitiesRobust();
+            self.B[self.ind_cp_in, :n+6]        = B_cp;
+            self.b[self.ind_cp_in]              = b_cp;            
+        elif(self.ENABLE_CAPTURE_POINT_LIMITS):
+            (B_cp, b_cp) = self.createCapturePointInequalities();            
             self.B[self.ind_cp_in, :n+6]        = B_cp;
             self.b[self.ind_cp_in]              = b_cp;
         
