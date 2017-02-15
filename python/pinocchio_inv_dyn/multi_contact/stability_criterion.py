@@ -7,6 +7,7 @@ Created on Thu Sep  1 16:54:39 2016
 
 from com_acc_LP import ComAccLP
 from pinocchio_inv_dyn.optimization.solver_LP_abstract import LP_status, LP_status_string
+from pinocchio_inv_dyn.data_structure_utils import Bunch
 from robust_equilibrium_DLP import RobustEquilibriumDLP
 import pinocchio_inv_dyn.plot_utils as plut
 import matplotlib.pyplot as plt
@@ -20,22 +21,6 @@ import cProfile
 
 np.set_printoptions(precision=2, suppress=True, linewidth=100);
 EPS = 1e-5;
-
-class Bunch:
-    def __init__(self, **kwds):
-        self.__dict__.update(kwds);
-
-    def __str__(self, prefix=""):
-        res = "";
-        for (key,value) in self.__dict__.iteritems():
-            if (isinstance(value, np.ndarray) and len(value.shape)==2 and value.shape[0]>value.shape[1]):
-                res += prefix+" - " + key + ": " + str(value.T) + "\n";
-            elif (isinstance(value, Bunch)):
-                res += prefix+" - " + key + ":\n" + value.__str__(prefix+"    ") + "\n";
-            else:
-                res += prefix+" - " + key + ": " + str(value) + "\n";
-        return res[:-1];
-
 
 class StabilityCriterion(object):
     _name = ""
