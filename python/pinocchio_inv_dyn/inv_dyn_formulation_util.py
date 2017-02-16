@@ -250,20 +250,20 @@ class InvDynFormulation (object):
         # initialize params
         joint_ns = 31     
         #flagged_ns = len(self.r.mass)
-        vlinks_sum= np.zeros((2,self.B_sp.shape[0]))
+        vlinks_sum= np.matlib.zeros((2,self.B_sp.shape[0]))
         # works only when map_index shape equals the number of polytope
         totalmass = 0
         for i in range(joint_ns):
-            a = int(np.sum(N[0:i]))
-            b = int(N[i]+a) 
-            vlink = np.zeros((3,int(N[i])))
+            a = int(np.sum(N[0,0:i]))
+            b = int(N[0,i]+a) 
+            vlink = np.matlib.zeros((3,int(N[0,i])))
             m = 0
             for j in range(a,b):
-                vlink[:,m] = np.array(self.r.data.oMi[i+1].act(np.matrix(V[:,j]).T)).T
+                vlink[:,m] = self.r.data.oMi[i+1].act(V[:,j])
                 m += 1
             while True:
                 try:
-                    Av,bv = poly_span_to_face(vlink)
+                    Av,bv = poly_span_to_face(np.asarray(vlink))
                 except:
                     r = np.ones((vlink.shape[0],vlink.shape[1]))*1e-1;
                     vlink = vlink +r    
@@ -287,7 +287,7 @@ class InvDynFormulation (object):
                     print 'Numerical Inconsistency'
                     return self.vcom,self.vdcom
                 break        
-            vlinknew = np.zeros((2,self.B_sp.shape[0]))
+            vlinknew = np.matlib.zeros((2,self.B_sp.shape[0]))
             for k in range(self.B_sp.shape[0]):
                 ### com ###
                 # find out vertex that minimizes the dot product of each face with the vertices.
@@ -303,10 +303,10 @@ class InvDynFormulation (object):
         vcomc = (1/totalmass)*vlinks_sum
         Aln,bln = compute_convex_hull(vcomc)
         
-        vdcomc = np.zeros((vcomc.shape[0],vcomc.shape[1]))
+        vdcomc = np.matlib.zeros((vcomc.shape[0],vcomc.shape[1]))
         for k in range(vcomc.shape[1]):
             comxy = np.copy(vcomc[:,k])
-            vdcomc[:,k] =comxy + np.array(self.dx_com[0:2]/np.sqrt(9.81/self.x_com[2])).T
+            vdcomc[:,k] =comxy + self.dx_com[0:2]/np.sqrt(9.81/self.x_com[2])
             #vdcomc[:,k] =  comxy + self.dx_com[0:2]/np.sqrt(9.81/self.x_com[2]) 
            
         d,res1 = check_point_polytope(Aln,bln,self.com_pinocchio[0:2]) 
@@ -666,7 +666,7 @@ class InvDynFormulation (object):
         # x_com and dx_com should correspond to maximum regions points of the the capture polygon
         c    = np.copy(self.b_sp);
         for i in range(self.B_sp.shape[0]):
-            c[i] = c[i] + np.dot(np.array(self.B_sp[i,:]),np.array(self.vcom[:,i]+ ((dt+1/omega)*dx_com+((0.5*dt*dt + dt/omega)*self.dd_com[0:2])).T).T);         
+            c[i,0] = c[i,0] + np.dot(self.B_sp[i,:],self.vcom[:,i]+ ((dt+1/omega)*dx_com+((0.5*dt*dt + dt/omega)*self.dd_com[0:2])).T.T);         
         return (B,c);         
 
     def createJointAccInequalitiesViability(self):

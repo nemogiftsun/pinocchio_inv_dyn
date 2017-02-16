@@ -226,7 +226,6 @@ def check_point_polytope(A,b,p):
 
 def twodprojection(V):
     xyproj = V[0:2,:]  
-    print xyproj
     A,b= poly_span_to_face(xyproj);
     V= poly_face_to_span(A,b);
     return -A,b

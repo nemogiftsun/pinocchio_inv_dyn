@@ -18,13 +18,17 @@ import numpy as np
 from pinocchio_inv_dyn.geom_utils import auto_generate_polytopes,check_point_polytope
 from pinocchio_inv_dyn.polytope_conversion_utils import poly_face_to_span,poly_span_to_face
 
-import example_hrp2_config as conf
+import pinocchio_inv_dyn.examples.example_hrp2_config_ng as conf
 from pinocchio_inv_dyn.robot_wrapper import RobotWrapper
 import pinocchio as se3
 
-def generate_new_inertial_params(MAX_MASS_ERROR, MAX_COM_ERROR, MAX_INERTIA_ERROR, verb=0):
-    rold = RobotWrapper(conf.urdfFileName, conf.model_path, root_joint=se3.JointModelFreeFlyer());
-    rnew = RobotWrapper(conf.urdfFileName, conf.model_path, root_joint=se3.JointModelFreeFlyer());
+def generate_new_inertial_params(MAX_MASS_ERROR, MAX_COM_ERROR, MAX_INERTIA_ERROR, verb=0,freeflyer = True):
+    if freeflyer == True:
+        rold = RobotWrapper(conf.urdfFileName, conf.model_path, root_joint=se3.JointModelFreeFlyer());
+        rnew = RobotWrapper(conf.urdfFileName, conf.model_path, root_joint=se3.JointModelFreeFlyer());
+    else:
+        rold =  RobotWrapper(conf.urdfFileName, conf.model_path, None);
+        rnew =  RobotWrapper(conf.urdfFileName, conf.model_path, None);
     nd = [0,]*31
     Vt = None
     for i in range(1,rnew.model.nbodies):
@@ -62,10 +66,10 @@ def generate_new_inertial_params(MAX_MASS_ERROR, MAX_COM_ERROR, MAX_INERTIA_ERRO
         Vt = V if Vt == None else np.hstack((Vt,V))
         nd[i-1] = V.shape[1]    
         
-    return Vt,nd,rnew 
+    return np.asmatrix(Vt),np.asmatrix(nd),rnew 
 
    
 if __name__=='__main__':                         
     # mass com_x com_y com_z inertia_xx inertia_xy inertia_xz inertia_yy inertia_yz inertia_zz
     #new_params,old_params = modify_hrp2_model_adapted('HRP2JRLmainsmall_v10.wrl', 0.03, 0.01, 0.2, verb=1);
-    [vt,nd] = generate_new_inertial_params(0.01, 0.01, 0.01)
+    vt,nd,rn = generate_new_inertial_params(0.01, 0.01, 0.01)
