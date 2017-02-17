@@ -287,7 +287,7 @@ class InvDynFormulation (object):
                     print 'Numerical Inconsistency'
                     return self.vcom,self.vdcom
                 break        
-            vlinknew = np.matlib.zeros((2,self.B_sp.shape[0]))
+            vlinknew = np.zeros((2,self.B_sp.shape[0]))
             for k in range(self.B_sp.shape[0]):
                 ### com ###
                 # find out vertex that minimizes the dot product of each face with the vertices.
@@ -409,6 +409,7 @@ class InvDynFormulation (object):
             if(np.max(np.abs(self.contact_points[2,:] - avg_z)) < 1e-3):
                 ''' Contact points are coplanar so I can simply compute the convex hull of 
                     vertical projection of contact points'''
+                self.contact_points = self.contact_points*0.99    
                 (self.B_sp, self.b_sp) = compute_convex_hull(self.contact_points[:2,:].A);
             else:
                 (H,h) = compute_GIWC(self.contact_points.T, self.contact_normals.T, mu_s);
