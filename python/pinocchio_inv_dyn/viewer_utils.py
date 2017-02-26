@@ -41,7 +41,7 @@ class Viewer(object):
     robot = None;
 
     name = '';
-    PLAYER_FRAME_RATE = 20;
+    PLAYER_FRAME_RATE = 200;
     
     COM_SPHERE_RADIUS = 0.01;
     COM_SPHERE_COLOR = (1, 0, 0, 1);
@@ -138,6 +138,29 @@ class Viewer(object):
                 timeLeft = timePeriod - (time()-lastRefreshTime);
                 if(timeLeft>0.0):
                     sleep(timeLeft);
+                self.robot.viewer.gui.refresh();
+                lastRefreshTime = time();
+                if(print_time_every>0.0 and t*dt%print_time_every==0.0):
+                    print "%.1f"%(t*dt);
+
+    def playModified(self, q, dt, cp_ctrl,cp,vdcom,solver,slow_down_factor=1, print_time_every=-1.0, robotName='robot1'):
+        if(ENABLE_VIEWER):
+            trajRate = 1.0/dt
+            rate = max(1, int(slow_down_factor*trajRate/self.PLAYER_FRAME_RATE));
+            lastRefreshTime = time();
+            timePeriod = 1.0/self.PLAYER_FRAME_RATE;
+            for t in range(0,q.shape[1],rate): 
+                self.updateRobotConfig(q[:,t], robotName, refresh=False);
+                timeLeft = timePeriod - (time()-lastRefreshTime);
+                if(timeLeft>0.0):
+                    sleep(timeLeft);      
+                self.updateObjectConfig('cp_control',(cp_ctrl[0,t]+0.5, cp_ctrl[1,t]+0.5, -0.02, 0,0,0,1)); 
+                self.updateObjectConfig('cp',(cp[0,t]+0.5, cp[1,t]+0.5, -0.02, 0,0,0,1));  
+                #csf = com_sim[t,1]+np.array((0.5,0.5,0.60))
+                #self.updateObjectConfig('com',(csf[0], csf[1],0, 0,0,0,1));  
+                if solver == 1:
+                    self.addPolytope('capture point polytope',(np.array((0.5,0.5))+vdcom[t].T).T,robotName='robot1',color = [1,0.8,0.4,1])
+                
                 self.robot.viewer.gui.refresh();
                 lastRefreshTime = time();
                 if(print_time_every>0.0 and t*dt%print_time_every==0.0):

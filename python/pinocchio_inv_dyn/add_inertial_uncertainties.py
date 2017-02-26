@@ -26,8 +26,9 @@ def generate_new_inertial_params(MAX_MASS_ERROR, MAX_COM_ERROR, MAX_INERTIA_ERRO
     if freeflyer == True:
         rold = RobotWrapper(conf.urdfFileName, conf.model_path, root_joint=se3.JointModelFreeFlyer());
         rnew = RobotWrapper(conf.urdfFileName, conf.model_path, root_joint=se3.JointModelFreeFlyer());
+
     else:
-        rold =  RobotWrapper(conf.urdfFileName, conf.model_path, None);
+        rold =  RobotWrapper(conf.urdfFileName, conf.model_path, None); 
         rnew =  RobotWrapper(conf.urdfFileName, conf.model_path, None);
     nd = [0,]*31
     Vt = None

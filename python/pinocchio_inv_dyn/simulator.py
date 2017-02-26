@@ -39,7 +39,7 @@ class Simulator (object):
     ENABLE_TORQUE_LIMITS = True;
     ENABLE_JOINT_LIMITS = True;
     
-    ACCOUNT_FOR_ROTOR_INERTIAS = False;
+    ACCOUNT_FOR_ROTOR_INERTIAS = True;
 
     VIEWER_DT = 0.05;
     DISPLAY_COM = False;
@@ -121,7 +121,10 @@ class Simulator (object):
     
     def reset(self, t, q, v, dt):
         n = self.nv;
-        self.Md = zeros((self.na,self.na)); #np.diag([ g*g*i for (i,g) in zip(INERTIA_ROTOR,GEAR_RATIO) ]); # rotor inertia
+        if self.ACCOUNT_FOR_ROTOR_INERTIAS == True:
+            self.Md = np.diag([ g*g*i for (i,g) in zip(self.INERTIA_ROTOR[6:],self.GEAR_RATIO[6:]) ]); # rotor inertia
+        else:
+            self.Md = zeros((self.na,self.na))
         self.q  = np.matrix.copy(q);
         self.v = np.matrix.copy(v);
         self.vOld = np.matrix.copy(v);
@@ -163,13 +166,18 @@ class Simulator (object):
         self.freeFlyer = simulator_configs.freeFlyer;
         
         if simulator_configs.r_modified == None:
+            print 'Simulators without errors loaded...'
             if(simulator_configs.freeFlyer):
                 self.r = RobotWrapper(simulator_configs.urdfFileName, simulator_configs.mesh_dir, se3.JointModelFreeFlyer());
             else:
                 self.r = RobotWrapper(simulator_configs.urdfFileName, simulator_configs.mesh_dir, None);
         else:
+            print 'Simulators with errors loaded...'
             self.r = simulator_configs.r_modified
-            
+    
+        self.ACCOUNT_FOR_ROTOR_INERTIAS = simulator_configs.ACCOUNT_FOR_ROTOR_INERTIAS
+        self.INERTIA_ROTOR = simulator_configs.INERTIA_ROTOR
+        self.GEAR_RATIO = simulator_configs.GEAR_RATIO
         self.nq = self.r.nq;
         self.nv = self.r.nv;
         self.na = self.nv-6 if self.freeFlyer else self.nv;
@@ -588,11 +596,11 @@ class Simulator (object):
         ind_pos_ub = (self.q[7:]>self.qMax[7:]+EPS).A.squeeze();
         ind_pos_lb = (self.q[7:]<self.qMin[7:]-EPS).A.squeeze();
         for i in np.where(ind_pos_ub)[0]:
-            res = res + [PositionConstraintViolation(self.t*self.dt, i, self.q[7+i], self.v[6+i], self.dv[6+i])];
+            res = res + [PositionConstraintViolation(self.t*self.dt, i, self.q[7+i], self.v[6+i], self.dv[6+i], jointName=self.r.model.names[2+i])];
             if(self.verb>0):
                 print "[SIMULATOR] %s" % (res[-1].toString());
         for i in np.where(ind_pos_lb)[0]:
-            res = res + [PositionConstraintViolation(self.t*self.dt, i, self.q[7+i], self.v[6+i], self.dv[6+i])];
+            res = res + [PositionConstraintViolation(self.t*self.dt, i, self.q[7+i], self.v[6+i], self.dv[6+i], jointName=self.r.model.names[2+i])];
             if(self.verb>0):
                 print "[SIMULATOR] %s" % (res[-1].toString());
                 

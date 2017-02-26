@@ -79,17 +79,18 @@ class PositionConstraintViolation(ConstraintViolation):
     ddq = 0;
     ddq_d = None;
     
-    def __init__(self, time, jointId, q, dq, ddq, ddq_d=None):
+    def __init__(self, time, jointId, q, dq, ddq, ddq_d=None, jointName='unknown'):
         self.time = time;
         self.jointId = jointId;
         self.q = q;
         self.dq = dq;
         self.ddq = ddq;
         self.ddq_d = ddq_d;
+        self.jointName = jointName;
         
     def toString(self):
         s = 'Time %.3f POS VIOLATION '%(self.time);
-        s += "joint %d, dq=%.1f, ddq=%.1f " % (self.jointId, self.dq, self.ddq);
+        s += "joint %d, %s, dq=%.1f, ddq=%.1f " % (self.jointId, self.jointName, self.dq, self.ddq);
         if(self.ddq_d!=None):
             s += "ddq_d=%.1f "%self.ddq_d;
         if(self.dq_ctrl!=None):

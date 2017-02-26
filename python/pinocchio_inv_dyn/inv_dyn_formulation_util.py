@@ -6,6 +6,7 @@ from pinocchio_inv_dyn.polytope_conversion_utils import poly_face_to_span,poly_s
 from pinocchio_inv_dyn.robot_wrapper import RobotWrapper
 import pinocchio as se3
 from pinocchio.utils import zero as zeros
+from pinocchio.utils import skew
 from acc_bounds_util_multi_dof import computeAccLimits
 from sot_utils import compute6dContactInequalities, crossMatrix
 from first_order_low_pass_filter import FirstOrderLowPassFilter
@@ -217,7 +218,12 @@ class InvDynFormulation (object):
         self.dt = invdyn_configs.dt;
         self.t = 0.0;
         self.name = name;
-        self.Md = zeros((self.na,self.na)); #np.diag([ g*g*i for (i,g) in zip(INERTIA_ROTOR,GEAR_RATIO) ]); # rotor inertia
+        self.ACCOUNT_FOR_ROTOR_INERTIAS = invdyn_configs.ACCOUNT_FOR_ROTOR_INERTIAS
+        if self.ACCOUNT_FOR_ROTOR_INERTIAS ==  True:
+            self.Md = np.diag([ g*g*i for (i,g) in zip(invdyn_configs.INERTIA_ROTOR[6:],invdyn_configs.GEAR_RATIO[6:]) ]); # rotor inertia
+        else:
+            self.Md = zeros((self.na,self.na))
+            
         self.dJ_com      = zeros((3,self.nv));
         ''' create low-pass filter for base velocities '''
         self.baseVelocityFilter = FirstOrderLowPassFilter(self.dt, self.BASE_VEL_FILTER_CUT_FREQ , zeros(6));            
@@ -231,6 +237,8 @@ class InvDynFormulation (object):
         self.qMin       = self.r.model.lowerPositionLimit;
         self.qMax       = self.r.model.upperPositionLimit;
         self.dqMax      = self.r.model.velocityLimit;
+        # lets check : need to be removed
+        #self.dqMax      = np.matlib.ones((36,1))*9.14286
         self.ddqMax     = zeros(self.na); 
         self.ddqStop    = zeros(self.na);
         if(self.freeFlyer):
@@ -251,6 +259,7 @@ class InvDynFormulation (object):
         joint_ns = 31     
         #flagged_ns = len(self.r.mass)
         vlinks_sum= np.matlib.zeros((2,self.B_sp.shape[0]))
+        vlinks_vel_sum= np.matlib.zeros((2,self.B_sp.shape[0]))        
         # works only when map_index shape equals the number of polytope
         totalmass = 0
         for i in range(joint_ns):
@@ -277,38 +286,79 @@ class InvDynFormulation (object):
             V_mlb = mass_links_bound[0]*vlink
             V_mhb = mass_links_bound[1]*vlink
             V_link = np.hstack((V_mhb,V_mlb))
+            ##NEW##
+            '''
+            V_link_vel = np.matlib.zeros(V_link.shape)
+            V_link_t = se3.SE3.Identity()
+            '''
+            ##NEW##
             while True:
                 try:
                     Alink,blink = compute_convex_hull(V_link[0:2,:])
                     V_link = poly_face_to_span(-Alink,blink)
+                    ##NEW##                    
+                    '''
+                    V_link_frame = np.copy(V_link_vel)
+                    for col in range(V_link.shape[1]): 
+                        V_link_t.translation = np.asmatrix(V_link[:,col]).T
+                        #print V_link_frame[:,col]
+                        V_link_frame[:,col] = (self.r.data.oMi[i+1].inverse()*V_link_t).translation.T  
+                    fid = self.getFrameId(self.r.model.names[i+1])
+                    frameVel = self.r.frameVelocity(fid)
+                    V_link_vel = frameVel.linear + skew(frameVel.angular)*V_link_frame  
+                    '''
+                    ##NEW##   
                 except:
                     vadd = np.ones((V_link.shape[0],V_link.shape[1]))*1e3
                     V_link += vadd
                     print 'Numerical Inconsistency'
-                    return self.vcom,self.vdcom
+                    return self.vcom,self.vdcom,self.vcom_v
                 break        
             vlinknew = np.zeros((2,self.B_sp.shape[0]))
+            #vlinknew_vel = np.zeros((2,self.B_sp.shape[0]))
             for k in range(self.B_sp.shape[0]):
                 ### com ###
                 # find out vertex that minimizes the dot product of each face with the vertices.
-                index_com = np.argmin(np.dot(self.B_sp[k,:],V_link))
+                index_com = np.argmin(np.dot(self.B_sp[k,:],V_link[0:2,:]))
                 # update the newly approximated polytope
-                vlinknew[:,k] = np.copy(np.matrix(V_link[:,index_com]))   
-            vlinks_sum += vlinknew    
+                ##NEW##
+                '''
+                omega   = np.sqrt(9.81/V_link[2,0]);
+                V_link_vel_c = (self.dt+1/omega)*V_link_vel                
+                index_com_v = np.argmax(np.dot(self.B_sp[k,:],V_link_vel[0:2,:]))                         
+                #index_com = np.argmin(np.dot(self.B_sp[k,:],V_link))
+                vlinknew_vel[:,k] = np.copy(np.matrix(V_link_vel[0:2,index_com_v])).T 
+                '''
+                ##NEW##                
+                vlinknew[:,k] = np.copy(np.matrix(V_link[0:2,index_com]))                  
+            vlinks_sum += vlinknew 
+            #vlinks_vel_sum += vlinknew_vel
+            
             vlever = self.r.data.oMi[i+1].act(self.r.model.inertias[i+1].lever)*self.r.model.inertias[i+1].mass
             Aln,bln = compute_convex_hull(vlinknew)
             d,res1 = check_point_polytope(Aln,bln,vlever[0:2]) 
             totalmass += self.r.model.inertias[i+1].mass
 
         vcomc = (1/totalmass)*vlinks_sum
+        vcomc_vel = (1/totalmass)*vlinks_vel_sum 
+        '''
+        print 'computed'
+        print self.x_com
+        print vcomc
+        print vcomc_vel
+        print self.dx_com
+        '''
         Aln,bln = compute_convex_hull(vcomc)
         
         vdcomc = np.matlib.zeros((vcomc.shape[0],vcomc.shape[1]))
+        
+        
+         
         for k in range(vcomc.shape[1]):
             comxy = np.copy(vcomc[:,k])
             vdcomc[:,k] =comxy + self.dx_com[0:2]/np.sqrt(9.81/self.x_com[2])
             #vdcomc[:,k] =  comxy + self.dx_com[0:2]/np.sqrt(9.81/self.x_com[2]) 
-           
+        '''  
         d,res1 = check_point_polytope(Aln,bln,self.com_pinocchio[0:2]) 
         if res1 == False:
             print 'The global com polytope doesnt contain the nominal com '
@@ -316,12 +366,13 @@ class InvDynFormulation (object):
                  print d[0,m]
             #(ax,l) =  plot_polytope(Aln, bln, V=None,color='ordered',ax=None,lw=2,dots=False)  
             #ax.scatter(self.compinocchio[0,0],self.compinocchio[1,0],400,color=COLOR[34],marker='o',label=str(4))              
-        return vcomc,vdcomc              
+        '''
+        return vcomc,vdcomc,vcomc_vel              
       
     def updateGlobalCOMPolytope(self):
         #q = toPinocchio(self.q)
-        self.com_pinocchio = se3.centerOfMass(self.r.model,self.r.data,self.q,True)
-        self.vcom,self.vdcom = self.computeGlobalCOMPolytope(self.V,self.N)
+        #self.com_pinocchio = se3.centerOfMass(self.r.model,self.r.data,self.q,True)
+        self.vcom,self.vdcom,self.vcom_v = self.computeGlobalCOMPolytope(self.V,self.N)
                 
     def getFrameId(self, frameName):
         if(self.r.model.existFrame(frameName)==False):
@@ -390,8 +441,10 @@ class InvDynFormulation (object):
         #print self.rigidContactConstraints_p
         self.contact_points  = zeros((3,ncp));
         self.contact_normals = zeros((3,ncp));
+        self.contact_points_reduced = zeros((3,ncp));
         mu_s = zeros(ncp);
         i = 0;
+        print self.rigidContactConstraints_p;
         for (constr, P, N, mu) in zip(self.rigidContactConstraints, self.rigidContactConstraints_p, 
                                       self.rigidContactConstraints_N, self.rigidContactConstraints_mu):
             oMi = self.r.framePosition(constr._frame_id);
@@ -408,8 +461,7 @@ class InvDynFormulation (object):
             avg_z = np.mean(self.contact_points[2,:]);
             if(np.max(np.abs(self.contact_points[2,:] - avg_z)) < 1e-3):
                 ''' Contact points are coplanar so I can simply compute the convex hull of 
-                    vertical projection of contact points'''
-                self.contact_points = self.contact_points*0.99    
+                    vertical projection of contact points'''   
                 (self.B_sp, self.b_sp) = compute_convex_hull(self.contact_points[:2,:].A);
             else:
                 (H,h) = compute_GIWC(self.contact_points.T, self.contact_normals.T, mu_s);
@@ -422,10 +474,13 @@ class InvDynFormulation (object):
                     self.B_sp[i,:] /= tmp;
                     self.b_sp[i]   /= tmp;
 
+            # add a margin in the support polygon for safety reason
+            self.b_sp -= 0.005
+            
 #            self.plotSupportPolygon();
             self.B_sp = np.matrix(self.B_sp);
-            self.b_sp = np.matrix(self.b_sp).T;
-
+            self.b_sp = np.matrix(self.b_sp).T;  
+            self.contact_points_reduced = poly_face_to_span(-np.asarray(self.B_sp),np.asarray(self.b_sp))
         self.support_polygon_computed = True;
             
     ''' Get the matrix B and vector b representing the 2d support polygon as B*x+b>=0 '''
@@ -463,10 +518,12 @@ class InvDynFormulation (object):
         
     def enableCapturePointLimits(self, enable=True):
         self.ENABLE_CAPTURE_POINT_LIMITS = enable;
+        self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST = not(enable);
         self.updateInequalityData();
 
     def enableCapturePointLimitsRobust(self, enable=True):
         self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST = enable;
+        self.ENABLE_CAPTURE_POINT_LIMITS = not(enable);
         self.MAX_MASS_ERROR = self.inertiaError[0]
         self.MAX_COM_ERROR = self.inertiaError[1]
         self.MAX_INERTIA_ERROR = self.inertiaError[2]           
@@ -653,7 +710,7 @@ class InvDynFormulation (object):
         x_com   = self.x_com[0:2];  # only x and y coordinates
         dx_com  = self.dx_com[0:2];
         B    = (0.5*dt*dt + dt/omega)*np.dot(self.B_sp, self.J_com[0:2,:]);
-        b    = self.b_sp + np.dot(self.B_sp, x_com + (dt+1/omega)*dx_com);
+        b    = self.b_sp + np.dot(self.B_sp, x_com + (dt+1/omega)*dx_com + ((0.5*dt*dt + dt/omega)*self.dd_com[0:2]));
         return (B,b);
         
     def createCapturePointInequalitiesRobust(self, footSizes = None):  
@@ -668,6 +725,8 @@ class InvDynFormulation (object):
         c    = np.copy(self.b_sp);
         for i in range(self.B_sp.shape[0]):
             c[i,0] = c[i,0] + np.dot(self.B_sp[i,:],self.vcom[:,i]+ ((dt+1/omega)*dx_com+((0.5*dt*dt + dt/omega)*self.dd_com[0:2])).T.T);         
+            #c[i,0] = c[i,0] + np.dot(self.B_sp[i,:],self.vcom[:,i]+ ((dt+1/omega)*dx_com+((0.5*dt*dt + dt/omega)*self.dd_com[0:2])).T.T);         
+
         return (B,c);         
 
     def createJointAccInequalitiesViability(self):
@@ -741,7 +800,8 @@ class InvDynFormulation (object):
             (B_q, b_q) = self.createJointAccInequalitiesViability();
             self.B[self.ind_acc_in, 6:n+6]      = B_q;
             self.b[self.ind_acc_in]             = b_q;
-            
+        #print 'What the problem?'
+        #print self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST   
         if(self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST):
             (B_cp, b_cp) = self.createCapturePointInequalitiesRobust();
             self.B[self.ind_cp_in, :n+6]        = B_cp;

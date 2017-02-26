@@ -2,14 +2,17 @@ from math import sqrt
 import numpy as np
 
 ''' *********************** USER-PARAMETERS *********************** '''
-SOLVER_ID       = 0;    # classic TSID formulation
-SOLVER_TO_INTEGRATE         = [SOLVER_ID];
+SOLVER_CLASSIC       = 0;    # classic TSID formulation
+SOLVER_ROBUST        = 1;
+SOLVER_TO_INTEGRATE         = [SOLVER_CLASSIC,SOLVER_ROBUST];
+ADD_ERRORS                  = True;
 DATA_FILE_NAME              = 'data';
 TEXT_FILE_NAME              = 'results.txt';
 SAVE_DATA                   = True;
 
 ''' INITIAL STATE PARAMETERS '''
-MAX_TEST_DURATION           = 3000;
+#MAX_TEST_DURATION           = 6000;
+MAX_TEST_DURATION           = 5000;
 dt                          = 1e-3;
 model_path                  = ["/opt/openrobots/share"];
 urdfFileName                = model_path[0] + "/hrp2_14_description/urdf/hrp2_14_reduced.urdf";
@@ -40,39 +43,53 @@ IMPOSE_VIABILITY_BOUNDS         = True;
 IMPOSE_ACCELERATION_BOUNDS      = True;
 JOINT_POS_PREVIEW               = 1.5; # preview window to convert joint pos limits into joint acc limits
 JOINT_VEL_PREVIEW               = 1;   # preview window to convert joint vel limits into joint acc limits
-MAX_JOINT_ACC                   = 30.0;
+#MAX_JOINT_ACC                   = 30.0;
+MAX_JOINT_ACC                   = 10.0;
 MAX_MIN_JOINT_ACC               = 10.0;
 USE_JOINT_VELOCITY_ESTIMATOR    = False;
 ACCOUNT_FOR_ROTOR_INERTIAS      = True;
-
+# rh task
+TRAJECTORY_TIME_REACHABLE                 = 1.0;
+TRAJECTORY_TIME_UNREACHABLE               = 3.0;
+REACHABLE                       = 0;
+UNREACHABLE                     = 1;
+RH_TASK_SWITCH                  = REACHABLE;
 # CONTROLLER GAINS
-kp_posture  = 30; #1.0;   # proportional gain of postural task
+kp_posture  = 100.0; #1.0;   # proportional gain of postural task
 kd_posture  = 2*sqrt(kp_posture);
-kp_constr   = 100.0;   # constraint proportional feedback gain
+kp_constr   = 100;   # constraint proportional feedback gain
 kd_constr   = 2*sqrt(kp_constr);   # constraint derivative feedback gain
 kp_com      = 10.0;
 kd_com      = 2*sqrt(kp_com);
-kp_ee       = 100.0;
-kd_ee       = 2*sqrt(kp_ee);
-kp_rh       = 100.0;
-kd_rh       = 2*sqrt(kp_ee);
+kp_rh_unreachable       = 5;
+kd_rh_unreachable       = 2*sqrt(kp_rh_unreachable);
+kp_rh_reachable         = 100;
+kd_rh_reachable         = 2*sqrt(kp_rh_reachable);
+
+
+import pinocchio as se3
+# unreachable
+tr_ur = np.matrix((1.02,-0.3,0.9)).T
+rot = np.matrix(((0.,0.,-1.0),(0.,1.,0.),(1.,0.,0.)))
+rh_des_unreachable = se3.SE3.Random()
+rh_des_unreachable.translation = tr_ur
+rh_des_unreachable.rotation = rot
+#reachable
+tr_r = np.matrix((0.8,-0.27,0.9)).T
+rh_des_reachable   = se3.SE3.Random()
+rh_des_reachable.translation = tr_r
+rh_des_reachable.rotation = rot
 
       
 constraint_mask = np.array([True, True, True, True, True, True]).T;
-ee_mask         = np.array([True, True, True, True, True, True]).T;
-rh_mask         = np.array([True, True, True, True, True, True]).T;
+rh_mask         = np.array([True, True, True, False, False, False]).T;
 # CONTROLLER WEIGTHS
 w_com           = 1;
 w_posture       = 1e-2;  # weight of postural task
 w_rh            = 1;
 
 
-import pinocchio as se3
-tr = np.matrix((1.3,-0.23,1)).T
-rot = np.matrix(((0.,0.,-1.0),(0.,1.,0.),(1.,0.,0.)))
-rh_des = se3.SE3.Random()
-rh_des.translation = tr
-rh_des.rotation = rot
+
 # QP SOLVER PARAMETERS
 maxIter = 300;      # max number of iterations
 maxTime = 0.8;      # max computation time for the solver in seconds
@@ -91,7 +108,7 @@ USE_LCP_SOLVER                 = False
 MAX_CONSTRAINT_ERROR        = 0.1;
 
 '''INERTIAL ERROR'''
-MAX_COM_ERROR = 0.01
+MAX_COM_ERROR = 0.02
 MAX_MASS_ERROR = 0.1
 MAX_INERTIA_ERROR = 0.01
 
@@ -100,7 +117,7 @@ INITIAL_CONFIG_ID                   = 0;
 INITIAL_CONFIG_FILENAME             = '../../../data/hrp2_configs_coplanar';
 
 ''' VIEWER PARAMETERS '''
-ENABLE_VIEWER               = True;
+ENABLE_VIEWER               = False;
 PLAY_MOTION_WHILE_COMPUTING = True;
 PLAY_MOTION_AT_THE_END      = True;
 DT_VIEWER                   = 10*dt;   # timestep used to display motion with viewer
@@ -112,3 +129,24 @@ SHOW_FIGURES     = False;
 SHOW_LEGENDS     = True;
 LINE_ALPHA       = 0.7;
 #BUTTON_PRESS_TIMEOUT        = 100.0;
+
+GEAR_RATIO = (  0.  ,    0.  ,    0.  ,    0.  ,    0.  ,    0.  ,    1.  ,
+          207.69,  381.54,  100.  ,  100.  ,  219.23,  231.25,  266.67,
+          250.  ,  145.45,  350.  ,  200.  ,  219.23,  231.25,  266.67,
+          250.  ,  145.45,  350.  ,  200.  ,  384.  ,  240.  ,  180.  ,
+          200.  ,  180.  ,  100.  ,  384.  ,  240.  ,  180.  ,  200.  ,
+          180.  ,  100.  )
+              
+INERTIA_ROTOR = (  0.00000000e+00,   0.00000000e+00,   0.00000000e+00,
+           0.00000000e+00,   0.00000000e+00,   0.00000000e+00,
+           6.96000000e-06,   6.96000000e-06,
+           1.10000000e-06,   1.10000000e-06,   6.96000000e-06,
+           6.60000000e-06,   1.00000000e-06,   6.60000000e-06,
+           1.10000000e-06,   1.00000000e-06,   1.00000000e-06,
+           6.96000000e-06,   6.60000000e-06,   1.00000000e-06,
+           6.60000000e-06,   1.10000000e-06,   1.00000000e-06,
+           1.00000000e-06,   1.01000000e-06,   6.96000000e-06,
+           1.34000000e-06,   1.34000000e-06,   6.96000000e-06,
+           6.96000000e-06,   1.01000000e-06,   6.96000000e-06,
+           1.34000000e-06,   1.34000000e-06,   6.96000000e-06,
+           6.96000000e-06);

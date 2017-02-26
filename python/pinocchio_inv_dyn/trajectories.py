@@ -142,7 +142,8 @@ class SmoothedSE3Trajectory (object):
     assert (t-self._t_init)>=0.0, "Time must be non-negative"
     i = int((t-self._t_init)/self._dt);
     if(i>=self._x_ref.shape[1]):
-       raise ValueError("Specified time exceeds the duration of the trajectory: "+str(t));
+        i = self._x_ref.shape[1]-1;
+#       raise ValueError("Specified time exceeds the duration of the trajectory: "+str(t));
     M = self._M_ref[i];
     M.translation = self._x_ref[:,i];
     v = Motion.Zero();

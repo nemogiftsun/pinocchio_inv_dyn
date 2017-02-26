@@ -3,6 +3,7 @@ Simple example of how to use this simulation/control environment using HRP-2.
 '''
 import example_hrp2_config_ng as conf
 import pinocchio as se3
+from pinocchio_inv_dyn.polytope_conversion_utils import poly_face_to_span
 from pinocchio.utils import *
 from pinocchio.utils import zero as mat_zeros
 from pinocchio_inv_dyn.robot_wrapper import RobotWrapper
@@ -11,13 +12,14 @@ from pinocchio_inv_dyn.simulator import Simulator
 import pinocchio_inv_dyn.viewer_utils as viewer_utils
 from pinocchio_inv_dyn.inv_dyn_formulation_util import InvDynFormulation
 from pinocchio_inv_dyn.tasks import SE3Task, CoMTask, JointPostureTask
-from pinocchio_inv_dyn.trajectories import ConstantSE3Trajectory, ConstantNdTrajectory, MinJerkSE3Trajectory
+from pinocchio_inv_dyn.trajectories import SmoothedSE3Trajectory, ConstantSE3Trajectory, ConstantNdTrajectory, MinJerkSE3Trajectory
 import pinocchio_inv_dyn.plot_utils as plot_utils
 from pinocchio_inv_dyn.add_inertial_uncertainties import generate_new_inertial_params
 from pinocchio_inv_dyn.data_structure_utils import Bunch
 import cProfile
 import pickle
 import numpy as np
+import os
 from numpy.linalg import norm
 from datetime import datetime
 from time import sleep
@@ -36,10 +38,9 @@ def createListOfLists(size1, size2):
         l[i] = size2*[None,];
     return l;
     
-def createInvDynFormUtil(q, v,invdyn_configs):
+def createInvDynFormUtil(q, v,invdyn_configs,id_solver):
     invDynForm = InvDynFormulation('inv_dyn'+datetime.now().strftime('%m%d_%H%M%S'), 
-                                   q, v, invdyn_configs);                                   
-    invDynForm.enableCapturePointLimitsRobust(conf.ENABLE_CAPTURE_POINT_LIMITS);
+                                   q, v, invdyn_configs);           
     invDynForm.enableTorqueLimits(conf.ENABLE_TORQUE_LIMITS);
     invDynForm.enableForceLimits(conf.ENABLE_FORCE_LIMITS);
     invDynForm.enableJointLimits(conf.ENABLE_JOINT_LIMITS, conf.IMPOSE_POSITION_BOUNDS, conf.IMPOSE_VELOCITY_BOUNDS, 
@@ -95,6 +96,7 @@ def updateConstraints(t, q, v, invDynForm, contacts):
     
             
 def startSimulation(q0, v0, solverId):
+    FIRST_TARGET_REACHED=False
     j = solverId
     print '\nGONNA INTEGRATE CONTROLLER %d' % j;
     capturePointIn = True;
@@ -104,14 +106,31 @@ def startSimulation(q0, v0, solverId):
     torques = np.zeros(na);
 
     t = 0;
-#    simulator.reset(t, q0, v0, conf.dt);
+    # CHECK CHECK CHECK
+    
+    if solverId == conf.SOLVER_CLASSIC:                                    
+        invDynForm.enableCapturePointLimits(conf.ENABLE_CAPTURE_POINT_LIMITS);
+    elif solverId == conf.SOLVER_ROBUST:
+        invDynForm.setNewSensorData(0, q0, v0);
+        invDynForm.enableCapturePointLimitsRobust(conf.ENABLE_CAPTURE_POINT_LIMITS);
+        
+    simulator.reset(t, q0, v0, conf.dt);
     
     contact_names  = [con.name for con in invDynForm.rigidContactConstraints];
     contact_sizes  = [con.dim for con in invDynForm.rigidContactConstraints];
     contact_size_cum = [int(np.sum(contact_sizes[:ii])) for ii in range(len(contact_sizes))];
     contact_points = [con.framePosition().translation for con in invDynForm.rigidContactConstraints];
 
-    for i in range(conf.MAX_TEST_DURATION):        
+    for i in range(conf.MAX_TEST_DURATION):   
+        rh_current_tr = simulator.r.framePosition(simulator.r.model.getFrameId('RARM_JOINT5')).translation
+        rh_task_error[j,i] = np.linalg.norm(rh_current_tr - rh_des_tr);
+        if (FIRST_TARGET_REACHED==False) and (i!=0):  
+                if( rh_task_error[j,i] < 5e-3):
+                    print "\n\n First target reached in %.3f s!"%((t)),"Right hand task error",rh_task_error[j,i];
+                    FIRST_TARGET_REACHED = True;
+                    time_to_reach[j] = t;
+                    i_to_reach[j]    = i;
+                    sleep(1);
         invDynForm.setNewSensorData(t, simulator.q, simulator.v);
         (G,glb,gub,lb,ub) = invDynForm.createInequalityConstraints();        
         (D,d)             = invDynForm.computeCostFunction(t);
@@ -121,11 +140,10 @@ def startSimulation(q0, v0, solverId):
         x_com[j][:,i]     = np.matrix.copy(invDynForm.x_com);       # from the solver view-point
         dx_com[j][:,i]    = np.matrix.copy(invDynForm.dx_com);      # from the solver view-point
         cp[j][:,i]        = np.matrix.copy(invDynForm.cp);          # from the solver view-point
-        #cp_real[j][:,i]   = np.matrix.copy(invDynForm.cp_modified);
         ang_mom[j,i]      = norm(invDynForm.getAngularMomentum());
         
         if(i%500==0):
-            print "Time %.3f... i %d" % (t, i), "Max joint vel", np.max(np.abs(v[j][:,i]));
+            print "Time %.3f... i %d" % (t, i), "Max joint vel", np.max(np.abs(v[j][:,i])),"Right hand task error",rh_task_error[j,i];
         
         if(i==conf.MAX_TEST_DURATION-1):
             print "MAX TIME REACHED \n";
@@ -157,7 +175,10 @@ def startSimulation(q0, v0, solverId):
 #        constrViol[i] = simulator.integrateAcc(t, dt, dv[j][:,i], conf.PLAY_MOTION_WHILE_COMPUTING);        
         # update viewer
         #simulator.updateComPositionInViewer(np.matrix([x_com[j][0,i], x_com[j][1,i], 0.]).T);
-        simulator.updateCapturePointPositionInViewer(cp[j][:,i],cp[j][:,i]);#cp_real
+        cp_real[j][:,i]   = np.matrix.copy(simulator.cp);
+        simulator.updateCapturePointPositionInViewer(cp[j][:,i],cp_real[j][:,i]);#cp_real
+        if j == conf.SOLVER_ROBUST:
+            v_cp_robust[i] = invDynForm.vdcom
         f              = y[nv:nv+invDynForm.k];
         contact_forces = [ f[ii:ii+3] for ii in contact_size_cum];
         simulator.updateContactForcesInViewer(contact_names, contact_points, contact_forces);
@@ -172,6 +193,11 @@ def startSimulation(q0, v0, solverId):
         for err in constraint_errors:
             if(norm(err[:3]) > conf.MAX_CONSTRAINT_ERROR):
                 print "ERROR Time %.3f constraint error:"%t, err[:3].T;
+                time_to_fall[j] = t; 
+                i_to_fall[j] = i;
+                final_time[j] = t;
+                final_time_step[j] = i;
+                falls[j] = 1;
                 return False;
                 
         ddx_c = invDynForm.Jc * dv[j][:,i] + invDynForm.dJc_v;
@@ -186,44 +212,57 @@ def startSimulation(q0, v0, solverId):
             print "Com velocity", np.linalg.norm(dx_com[j][:,i]);
             print "Solver violated %d inequalities" % solvers[j].nViolatedInequalities; #, "max inequality violation", np.min(ineq[i,j,:m_in]);
             print "ROBOT FELL AFTER %.3f s\n" % (t);
+            time_to_fall[j] = t; 
+            i_to_fall[j] = i;
             final_time[j] = t;
             final_time_step[j] = i;
+            falls[j] = 1;
             for index in range(i+1,conf.MAX_TEST_DURATION):
                 q[j][:,index] = q[j][:,i];
             return False;
             
 
         ''' ******************************************** DEBUG PRINTS ******************************************** '''
-        cp_ineq = np.dot(B_sp, cp[j][:,i]) + b_sp;
-        if(capturePointIn and (cp_ineq<0.0).any()):
+        cp_ineq = np.dot(B_sp, cp_real[j][:,i]) + b_sp;
+        if(capturePointIn and (cp_ineq<-EPS).any()):
             print "Time %.3f WARNING capture point is outside support polygon, margin %.3f" % (t, np.min(cp_ineq))
             capturePointIn = False;
         elif(not capturePointIn and (cp_ineq>=0.0).all()):
             print "Time %.3f WARNING capture point got inside support polygon, margin %.3f" % (t, np.min(cp_ineq))
             capturePointIn = True;
-            
-        t += dt;
-        simulator.viewer.addPolytope('capture point polytope',invDynForm.vdcom,robotName='robot1',color = [1,0.8,0.4,1])
-        sp_points = np.array(invDynForm.contact_points[0:2,:])
-        if(i%100==0):
-            simulator.viewer.addPolytope('sp_controller',(sp_points.T).T,robotName='robot1',color = [0,0.7,0.4,0.8])
+        elif(not capturePointIn):
+            print "Time %.3f WARNING capture point still outside support polygon, margin %.3f" % (t, np.min(cp_ineq))
 
+        t += dt;
+        if j == conf.SOLVER_ROBUST:
+            simulator.viewer.addPolytope('capture point polytope',invDynForm.vdcom,robotName='robot1',color = [1,0.8,0.4,1])
+        #sp_points = np.array(invDynForm.contact_points[0:2,:])
+        sp_points = np.array(invDynForm.contact_points_reduced[0:2,:])
+        if(i%100==0):
+            simulator.viewer.addPolytope('sp_controller',sp_points,robotName='robot1',color = [0,0.7,0.4,0.8])
+    
+        #simulator.viewer.addSphere('t1', 0.04, invDynForm.r.framePosition(invDynForm.getFrameId('RARM_JOINT6')).translation, color=(0.0, 0.2, 0, 1));
+        #simulator.viewer.addSphere('t2', 0.04, invDynForm.r.framePosition(invDynForm.getFrameId('RARM_JOINT5')).translation, color=(0.0, 0.0, 0.5, 1));
 
 
 ''' *********************** BEGINNING OF MAIN SCRIPT *********************** '''
-COM_DISTANCE = 0.13
-print "Simple example to demonstrate how to use this simulation/control environment using the humanoid robot HRP-2";
-print "If everything is fine, the robot should move its center of mass of %.2f m in the y direction\n" % COM_DISTANCE;
+seed = int(np.random.uniform(0, 1000))
+#seed = 2
+np.random.seed(seed)
+import random
+random.seed(seed);
+print "Random seed", seed;
 
 np.set_printoptions(precision=2, suppress=True);
 date_time = datetime.now().strftime('%Y%m%d_%H%M%S');
 viewer_utils.ENABLE_VIEWER  = conf.ENABLE_VIEWER
-plot_utils.FIGURE_PATH      = '../results/test_1/'+date_time+'/'; #'_'+str(conf.SOLVER_TO_INTEGRATE).replace(' ', '_')+'/';
+plot_utils.FIGURE_PATH      = '../results/test_reachable/'+date_time+'/'; #'_'+str(conf.SOLVER_TO_INTEGRATE).replace(' ', '_')+'/';
 plot_utils.SAVE_FIGURES     = conf.SAVE_FIGURES;
 plot_utils.SHOW_FIGURES     = conf.SHOW_FIGURES;
 plot_utils.SHOW_LEGENDS     = conf.SHOW_LEGENDS;
 plot_utils.LINE_ALPHA       = conf.LINE_ALPHA;
-SHOW_CONTACT_POINTS_IN_VIEWER = True;
+SHOW_CONTACT_POINTS_IN_VIEWER = False;
+TEXT_FILE_NAME              = 'results.txt';
 
 ''' CREATE CONTROLLER AND SIMULATOR '''
 if(conf.freeFlyer):
@@ -238,21 +277,20 @@ dt = conf.dt;
 q0 = conf.q_hslff;
 v0 = conf.v0;
 
-
-
-
-
-
 #create invdyn form util
-invdyn_configs = Bunch(dt = None, mesh_dir = None, urdfFileName = None, freeFlyer=True,vcom = None,ncom=None,inertiaError=[0,0,0])
+invdyn_configs = Bunch(dt = None, mesh_dir = None, urdfFileName = None, freeFlyer=True,vcom = None,ncom=None,inertiaError=[0,0,0],GEAR_RATIO=conf.GEAR_RATIO,INERTIA_ROTOR=conf.INERTIA_ROTOR,ACCOUNT_FOR_ROTOR_INERTIAS=conf.ACCOUNT_FOR_ROTOR_INERTIAS)
 invdyn_configs.dt = conf.dt
 invdyn_configs.mesh_dir = conf.model_path
 invdyn_configs.urdfFileName = conf.urdfFileName
 invdyn_configs.freeFlyer = conf.freeFlyer
 invdyn_configs.inertiaError=[conf.MAX_MASS_ERROR,conf.MAX_COM_ERROR,conf.MAX_INERTIA_ERROR]
-simulator_configs = Bunch(dt=None, model_path=None, freeFlyer = False,urdfFileName=None, fMin=None, mu=None,detectContactPoint=False,r_modified=None)
-invdyn_configs.vcom,invdyn_configs.ncom,simulator_configs.r_modified = generate_new_inertial_params(conf.MAX_MASS_ERROR,conf.MAX_COM_ERROR,conf.MAX_INERTIA_ERROR)
-invDynForm = createInvDynFormUtil(q0, v0,invdyn_configs);
+simulator_configs = Bunch(dt=None, model_path=None, freeFlyer = False,urdfFileName=None, fMin=None, mu=None,detectContactPoint=False,r_modified=None,GEAR_RATIO=conf.GEAR_RATIO,INERTIA_ROTOR=conf.INERTIA_ROTOR,ACCOUNT_FOR_ROTOR_INERTIAS=conf.ACCOUNT_FOR_ROTOR_INERTIAS)
+invdyn_configs.vcom,invdyn_configs.ncom,error_model = generate_new_inertial_params(conf.MAX_MASS_ERROR,conf.MAX_COM_ERROR,conf.MAX_INERTIA_ERROR)
+if conf.ADD_ERRORS == True:
+    simulator_configs.r_modified = error_model
+else:
+    simulator_configs.r_modified = None;
+invDynForm = createInvDynFormUtil(q0, v0,invdyn_configs,conf.SOLVER_TO_INTEGRATE[0]);
 # create sim
 simulator_configs.fMin=conf.fMin;
 simulator_configs.mu=conf.mu;
@@ -287,24 +325,50 @@ invDynForm.addTask(posture_task, conf.w_posture);
 
 ''' CREATE Right hand task ''' 
 fid = invDynForm.getFrameId('RARM_JOINT5');
-oMi = invDynForm.r.framePosition(fid); 
-righthand_traj = MinJerkSE3Trajectory('RARM_JOINT5', oMi, conf.rh_des, conf.dt, 3.0);
-task_rh_hand= SE3Task(invDynForm.r, fid, righthand_traj,'RARM_JOINT5');
-task_rh_hand.kp = conf.kp_rh;
-task_rh_hand.kv = conf.kd_rh;
-task_rh_hand.mask = (conf.rh_mask);  
-#invDynForm.addTask(task_rh_hand, conf.w_rh)
+oMi = invDynForm.r.framePosition(fid);
 
-simulator.viewer.addSphere('target', 0.03, conf.rh_des.translation, color=(1.0, 0, 0, 1));
+#righthand_traj = ConstantSE3Trajectory('RARM_JOINT5', rh_des); 
+kp_rh = 0;kv_rh=0;
+if conf.RH_TASK_SWITCH == conf.UNREACHABLE:
+    rh_des = conf.rh_des_unreachable
+    kp_rh = conf.kp_rh_unreachable;
+    kv_rh = conf.kd_rh_unreachable;
+    trajectory_time = conf.TRAJECTORY_TIME_UNREACHABLE;
+elif conf.RH_TASK_SWITCH == conf.REACHABLE:
+    rh_des = conf.rh_des_reachable
+    kp_rh = conf.kp_rh_reachable;
+    kv_rh = conf.kd_rh_reachable;
+    trajectory_time = conf.TRAJECTORY_TIME_REACHABLE
+
+rh_des_tr = rh_des.translation
+righthand_traj = MinJerkSE3Trajectory('RARM_JOINT5', oMi, rh_des, conf.dt, trajectory_time);
+#rh_traj_back = MinJerkSE3Trajectory('RARM_JOINT5', rh_des, oMi, conf.dt, trajectory_time);
+#N = rh_traj_forth._x_ref.shape[1];
+#x_rh_ref = (2*N)*[None,];
+#for i in range(N):
+#    x_rh_ref[i] = se3.SE3.Identity();
+#    x_rh_ref[i].translation = rh_traj_forth._x_ref[:,i]
+#for i in range(N):
+#    x_rh_ref[N+i] = se3.SE3.Identity();
+#    x_rh_ref[N+i].translation = rh_traj_back._x_ref[:,i];
+#righthand_traj = SmoothedSE3Trajectory('RARM_JOINT5', x_rh_ref, conf.dt, 21)
+
+task_rh_hand= SE3Task(invDynForm.r, fid, righthand_traj,'RARM_JOINT5');
+task_rh_hand.kp = kp_rh;
+task_rh_hand.kv = kv_rh; 
+invDynForm.addTask(task_rh_hand, conf.w_rh)
+task_rh_hand.mask(conf.rh_mask); 
+
+simulator.viewer.addSphere('target', 0.03, rh_des.translation, color=(1.0, 0, 0, 1));
 
 ''' CREATE COM TASK '''
 com_des = invDynForm.x_com.copy();
-com_des[1] += COM_DISTANCE;
+#com_des[1] += COM_DISTANCE;
 com_traj  = ConstantNdTrajectory("com_traj", com_des);
 com_task = CoMTask(invDynForm.r, com_traj);
 com_task.kp = conf.kp_com;
 com_task.kv = conf.kd_com;
-invDynForm.addTask(com_task, conf.w_com);
+#invDynForm.addTask(com_task, conf.w_com);
 
 ''' Compute stats about initial state '''
 (B_sp, b_sp) = invDynForm.getSupportPolygon();
@@ -321,12 +385,15 @@ if(SHOW_CONTACT_POINTS_IN_VIEWER):
         simulator.viewer.updateObjectConfigRpy("contact_point"+str(j), p[:,j]);
 invDynForm.contact_points
 sp_points = np.array(invDynForm.contact_points[0:2,:])
+v_sp_original        = sp_points
+v_sp_reduced         = np.array(invDynForm.contact_points_reduced[0:2,:])
 ROBOT_MOVE = np.array((0.5,0.5,-0.01))
+
 #simulator.viewer.addPolytope('sp_controller',(sp_points.T).T,robotName='robot1',color = [0,0.7,0.4,0.8])
 
 ''' Create the solvers '''
 solver_id       = StandardQpSolver(na, m_in, "qpoases", maxIter=conf.maxIter, verb=conf.verb);
-solvers = [solver_id];
+solvers = [solver_id,solver_id];
 N_SOLVERS = len(solvers);
 solver_names = [s.name for s in solvers];
 
@@ -350,26 +417,109 @@ solver_imode         = np.zeros((N_SOLVERS, conf.MAX_TEST_DURATION), dtype=np.in
 final_time           = np.zeros(N_SOLVERS);
 final_time_step      = np.zeros(N_SOLVERS, np.int);
 controller_balance   = N_SOLVERS*[False,];
+# reaching task relavant 
+time_to_fall         = np.zeros(N_SOLVERS);
+time_to_reach        = np.zeros(N_SOLVERS);
+i_to_fall            = np.zeros(N_SOLVERS);
+i_to_reach           = np.zeros(N_SOLVERS);
+rh_task_error        = np.zeros((N_SOLVERS,conf.MAX_TEST_DURATION));
+v_cp_robust          = conf.MAX_TEST_DURATION*[None];
+v_sp                 = [[None]*conf.MAX_TEST_DURATION]*N_SOLVERS
+itmax                = np.ones(N_SOLVERS)*conf.MAX_TEST_DURATION
+falls                = np.zeros(N_SOLVERS);
+time_max             = np.zeros(N_SOLVERS);
 
+
+if(conf.SAVE_DATA):
+    os.makedirs(plot_utils.FIGURE_PATH);
+    np.savez_compressed(plot_utils.FIGURE_PATH+conf.DATA_FILE_NAME, 
+                        SOLVER_TO_INTEGRATE=conf.SOLVER_TO_INTEGRATE,
+                        MAX_MASS_ERROR=conf.MAX_MASS_ERROR,
+                        MAX_COM_ERROR=conf.MAX_COM_ERROR,
+                        MAX_INERTIA_ERROR=conf.MAX_INERTIA_ERROR,
+                        dt=conf.dt,
+                        maxTime=conf.maxTime,
+                        maxIter=conf.maxIter,
+                        kp_posture=conf.kp_posture,
+                        kd_posture=conf.kd_posture,
+                        w_posture=conf.w_posture,
+                        kp_rh=kp_rh,
+                        kd_rh=kv_rh,
+                        w_rh=conf.w_rh,
+                        mu=conf.mu,
+                        fMin=conf.fMin,
+                        JOINT_POS_PREVIEW=conf.JOINT_POS_PREVIEW,
+                        JOINT_VEL_PREVIEW=conf.JOINT_VEL_PREVIEW,
+                        MAX_JOINT_ACC=conf.MAX_JOINT_ACC,
+                        ACCOUNT_FOR_ROTOR_INERTIAS=conf.ACCOUNT_FOR_ROTOR_INERTIAS
+                        );
+
+#print simulator.r.model.inertias[simulator.r.model.getJointId('RARM_JOINT6')]
 
 for s in conf.SOLVER_TO_INTEGRATE:
+#    if s == conf.SOLVER_ROBUST:
+#        invDynForm.ENA
+#    elif s == conf.SOLVER_CLASSIC:    
+#    invDynForm = createInvDynFormUtil(q0, v0,invdyn_configs);
+#    simulator = createSimulator(q0, v0,simulator_configs);
+#    simulator.viewer.setVisibility("floor", "ON" if conf.SHOW_VIEWER_FLOOR else "OFF");
     controller_balance[s] = startSimulation(q0, v0, s);
 #    cProfile.run('startSimulation(simulator.q, simulator.dq);');
 
+
 info = '';
 for j in conf.SOLVER_TO_INTEGRATE:
-    info += "Final com pos solver %d: "%j + str(x_com[j][:,final_time_step[j]].T) + "\n";
-    info += "Final com vel solver %d: "%j + str(dx_com[j][:,final_time_step[j]].T);
+    
+    #info += "Final com pos solver %d: "%j + str(x_com[j][:,final_time_step[j]].T) + "\n";
+    #info += "Final com vel solver %d: "%j + str(dx_com[j][:,final_time_step[j]].T);
     info += " (norm %.3f)\n" % norm(dx_com[j][:,final_time_step[j]]);
     cp_ineq = np.min(np.dot(B_sp, cp[j][:,final_time_step[j]]) + b_sp);
     in_or_out = "outside" if (cp_ineq<0.0) else "inside";
     info += "Final capture point solver %d "%j +str(cp[j][:,final_time_step[j]].T)+" is "+in_or_out+" support polygon %.3f\n"%(cp_ineq);
     info += "Final max joint vel solver %d: %.3f\n"%(j, np.max(np.abs(v[j][:,final_time_step[j]])));
+    tfile = open(plot_utils.FIGURE_PATH+conf.TEXT_FILE_NAME, "w")
+    tfile.write(info);
 info += "***********************************************************************************\n"
 print info
 
-if(conf.PLAY_MOTION_AT_THE_END):
-    raw_input("Press Enter to play motion in real time...");    
+if(conf.SAVE_DATA):
+    tfile.write(info);
+    tfile.close(); 
+    path = plot_utils.FIGURE_PATH;
+    imax = np.max((np.max(i_to_reach),np.max(itmax),np.max(i_to_fall)))  
+    
+    np.savez_compressed(path+conf.DATA_FILE_NAME, 
+                        q=q,
+                        v=v,
+                        final_time_step=final_time_step,
+                        final_time=final_time,
+                        falls = falls,
+                        time_to_fall=time_to_fall,
+                        time_to_reach=time_to_reach,
+                        i_to_fall=i_to_fall,
+                        i_to_reach=i_to_reach,
+                        rh_task_error=rh_task_error,
+                        x_com_sim=x_com,
+                        cp=cp,
+                        cp_ctrl = cp_real,
+                        v_cp_robust=v_cp_robust,
+                        v_sp_original=v_sp_original,
+                        v_sp_reduced=v_sp_reduced,
+                        dt = dt,
+                        );
+
+#if(conf.PLAY_MOTION_AT_THE_END):
+#    raw_input("Press Enter to play motion in real time...");    
+#    for s in conf.SOLVER_TO_INTEGRATE:
+#        simulator.viewer.play(q[s][:,:final_time_step[s]], dt, 1.0);
+#    print "Computed motion finished";
+viewer_utils.ENABLE_VIEWER = True
+def play():
     for s in conf.SOLVER_TO_INTEGRATE:
-        simulator.viewer.play(q[s][:,:final_time_step[s]], dt, 1.0);
-    print "Computed motion finished";
+        robotwrapper  = RobotWrapper(conf.urdfFileName, conf.model_path, se3.JointModelFreeFlyer())
+        viewer1 = viewer_utils.Viewer('viewer',robotwrapper,'robot1');
+        #viewer.activateMouseCamera();
+        viewer2 = viewer_utils.Viewer('viewer2',robotwrapper,'robot2');
+
+        viewer1.play(q[s][:,:final_time_step[s]], dt, 1)
+        viewer2.play(q[s][:,:final_time_step[s]], dt, 1)        
