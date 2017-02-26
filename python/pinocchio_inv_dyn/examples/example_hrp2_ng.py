@@ -432,7 +432,7 @@ time_max             = np.zeros(N_SOLVERS);
 
 if(conf.SAVE_DATA):
     os.makedirs(plot_utils.FIGURE_PATH);
-    np.savez_compressed(plot_utils.FIGURE_PATH+conf.DATA_FILE_NAME, 
+    np.savez_compressed(plot_utils.FIGURE_PATH+conf.DATA_FILE_NAME+'_config', 
                         SOLVER_TO_INTEGRATE=conf.SOLVER_TO_INTEGRATE,
                         MAX_MASS_ERROR=conf.MAX_MASS_ERROR,
                         MAX_COM_ERROR=conf.MAX_COM_ERROR,
