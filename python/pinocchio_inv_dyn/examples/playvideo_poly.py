@@ -29,7 +29,7 @@ import math
             
             
 np.set_printoptions(precision=2, suppress=True);
-plot_utils.FIGURE_PATH = '../results/test_reachable/10cmcom10percmass/check/';
+plot_utils.FIGURE_PATH = '../results/test_unreachable/';
 #plot_utils.FIGURE_PATH = '../results/test_drill/check/';
 print 'Analyze data in folder', plot_utils.FIGURE_PATH;
 
@@ -138,8 +138,8 @@ for dirname in os.listdir(plot_utils.FIGURE_PATH):
 #        else:
 #            tmax[i,s] = itmax[i,s]*dt 
 
-        for c in range(100,rh_task_error.shape[1]):
-            if np.max(np.abs(vel[s]),axis=0)[c] < 5e-3:
+        for c in range(1000,rh_task_error.shape[1]):
+            if np.max(np.abs(vel[s]),axis=0)[c] < 0.11:
                 itzerov[i,s] = c;
                 break;  
         task_error[i,s] = rh_task_error[s,itmax[i,s]]
