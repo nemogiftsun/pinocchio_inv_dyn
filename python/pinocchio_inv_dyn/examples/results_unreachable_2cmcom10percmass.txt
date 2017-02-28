@@ -1,0 +1,22 @@
+Number of Tests run = 100
+=====================================
+Number of fails detected 
+=====================================
+Classic Controller = 33.0
+Robust Controller = 1.0
+
+Number of real fails(includes the undetected)
+=====================================
+Classic Controller = 33.0
+Robust Controller = 1.0
+
+Mean task error for both solvers:
+=====================================
+Classic Controller(in m) = 0.065549642407
+Robust Controller(in m)  = 0.0815030161189
+
+Mean Task time for both solvers:
+=====================================
+Classic Controller(in secs) = 3.13371641791
+Robust Controller(in secs)  = 3.2341010101
+
