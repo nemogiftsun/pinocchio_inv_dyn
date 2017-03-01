@@ -19,4 +19,28 @@ Mean Task time for both solvers:
 =====================================
 Classic Controller(in secs) = 3.23607246377
 Robust Controller(in secs)  = 3.22918556701
+-----------------------------------------------------------------
+
+Number of Tests run = 99
+=====================================
+Number of fails detected 
+=====================================
+Classic Controller = 32.0
+Robust Controller = 3.0
+
+Number of real fails(includes the undetected)
+=====================================
+Classic Controller = 89.0
+Robust Controller = 70.0
+
+Mean task error for both solvers:
+=====================================
+Classic Controller(in m) = 0.041774733994
+Robust Controller(in m)  = 0.0589398034859
+
+Mean Task time for both solvers:
+=====================================
+Classic Controller(in secs) = 4.4205
+Robust Controller(in secs)  = 4.47582758621
+
 
