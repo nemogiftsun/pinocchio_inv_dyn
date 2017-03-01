@@ -29,7 +29,7 @@ import math
             
             
 np.set_printoptions(precision=2, suppress=True);
-plot_utils.FIGURE_PATH = '../results/test_unreachable/';
+plot_utils.FIGURE_PATH = '../results/test_unreachable/2cmcom10percmass/';
 #plot_utils.FIGURE_PATH = '../results/test_drill/check/';
 print 'Analyze data in folder', plot_utils.FIGURE_PATH;
 
@@ -69,6 +69,7 @@ task_error          = np.zeros((N_DIR,N_SOLVERS));
 time_to_fall        = np.zeros((N_DIR,N_SOLVERS));
 tmax                = np.zeros((N_DIR,N_SOLVERS));
 falls               = np.zeros((N_DIR,N_SOLVERS));
+real_falls               = np.zeros((N_DIR,N_SOLVERS));
 reach               = np.zeros((N_DIR,N_SOLVERS));
 #i_to_fall           = np.zeros((N_DIR,N_SOLVERS), np.int);
 itmax              = np.zeros((N_DIR,N_SOLVERS));
@@ -137,19 +138,21 @@ for dirname in os.listdir(plot_utils.FIGURE_PATH):
 #            tmax[i,s] = time_to_fall[i,s] 
 #        else:
 #            tmax[i,s] = itmax[i,s]*dt 
+        time_to_reach[i,s] = 0
+        task_error[i,s] = 0
+        if falls[i,s] == 0:
+            for c in range(1000,rh_task_error.shape[1]):
+                if np.max(np.abs(vel[s]),axis=0)[c] < 5e-3: 
+                   itzerov[i,s] = c;
+                   task_error[i,s] = rh_task_error[s,itzerov[i,s]]
+                   time_to_reach[i,s] = itzerov[i,s] *dt
+                   break;
+        if time_to_reach[i,s] == 0:
+           real_falls[i,s] = 1
 
-        for c in range(1000,rh_task_error.shape[1]):
-            if np.max(np.abs(vel[s]),axis=0)[c] < 0.11:
-                itzerov[i,s] = c;
-                break;  
-        task_error[i,s] = rh_task_error[s,itmax[i,s]]
-        if falls[i,s] != 0:
-            time_to_reach[i,s] = 0 
-            task_error[i,s] = 0  
-        else:
-            time_to_reach[i,s] = max(itzerov[i,s]*dt,time_to_reach[i,s])
-          
-        
+        #time_to_reach[i,s] = max(itzerov[i,s]*dt,time_to_reach[i,s])
+        #task_error[i,s] = rh_task_error[s,int(time_to_reach[i,s]/dt)]
+                  
        
     #viewer.moveCamera(eye1, pos1, ud)
     sp_points_o = data['v_sp_original']
@@ -208,7 +211,7 @@ time_to_fall = time_to_fall[:i,:];
 nonfalls = abs(falls-np.ones(falls.shape))
 #enf = task_error*nonfalls;
 #real_falls = ((enf>0.20)*1+falls)
-real_falls = falls
+#real_falls = falls
 real_nonfalls = abs(real_falls-np.ones(real_falls.shape))
 error_at_nonfalls =task_error*real_nonfalls
 time_taken_nonfalls = tmax*real_nonfalls
