@@ -4,7 +4,8 @@ import numpy as np
 ''' *********************** USER-PARAMETERS *********************** '''
 SOLVER_CLASSIC       = 0;    # classic TSID formulation
 SOLVER_ROBUST        = 1;
-SOLVER_TO_INTEGRATE         = [SOLVER_CLASSIC,SOLVER_ROBUST];
+SOLVER_ROBUST_VEL    = 2;
+SOLVER_TO_INTEGRATE         = [SOLVER_ROBUST,SOLVER_ROBUST_VEL];
 ADD_ERRORS                  = True;
 DATA_FILE_NAME              = 'data';
 TEXT_FILE_NAME              = 'results.txt';
@@ -12,7 +13,7 @@ SAVE_DATA                   = True;
 
 ''' INITIAL STATE PARAMETERS '''
 #MAX_TEST_DURATION           = 6000;
-MAX_TEST_DURATION           = 5000;
+MAX_TEST_DURATION           = 10000;
 dt                          = 1e-3;
 model_path                  = ["/opt/openrobots/share"];
 urdfFileName                = model_path[0] + "/hrp2_14_description/urdf/hrp2_14_reduced.urdf";
@@ -34,7 +35,7 @@ v0 = np.matrix(np.zeros(36)).T;
 
 ''' CONTROLLER CONFIGURATION '''
 ENABLE_CAPTURE_POINT_LIMITS     = True;
-ENABLE_TORQUE_LIMITS            = True;
+ENABLE_TORQUE_LIMITS            = False;
 ENABLE_FORCE_LIMITS             = True;
 ENABLE_JOINT_LIMITS             = True;
 IMPOSE_POSITION_BOUNDS          = True;
@@ -108,7 +109,7 @@ USE_LCP_SOLVER                 = False
 MAX_CONSTRAINT_ERROR        = 0.1;
 
 '''INERTIAL ERROR'''
-MAX_COM_ERROR = 0.02
+MAX_COM_ERROR = 0.01
 MAX_MASS_ERROR = 0.1
 MAX_INERTIA_ERROR = 0.01
 
@@ -117,7 +118,7 @@ INITIAL_CONFIG_ID                   = 0;
 INITIAL_CONFIG_FILENAME             = '../../../data/hrp2_configs_coplanar';
 
 ''' VIEWER PARAMETERS '''
-ENABLE_VIEWER               = False;
+ENABLE_VIEWER               = True;
 PLAY_MOTION_WHILE_COMPUTING = True;
 PLAY_MOTION_AT_THE_END      = True;
 DT_VIEWER                   = 10*dt;   # timestep used to display motion with viewer

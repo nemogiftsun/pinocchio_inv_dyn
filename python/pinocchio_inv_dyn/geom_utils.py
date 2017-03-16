@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cdd
 import plot_utils as plut
-from polytope_conversion_utils import poly_face_to_span,poly_span_to_face,NotPolyFace
+from polytope_conversion_utils import poly_face_to_span,poly_span_to_face,NotPolyFace,arbitrary_face_to_span
 
 NUMBER_TYPE = 'float'  # 'float' or 'fraction'
 
@@ -75,98 +75,109 @@ def compute_triangle_area(a, b, c):
     return sqrt(s*(s-la)*(s-lb)*(s-lc));
 
     
-''' Plot inequalities A*x<=b on x-y plane.
+''' Plot inequalities F_com*x+f_com=0 on x-y plane.
 '''
-def plot_inequalities(A, b, x_bounds, y_bounds, ls='--', color='k', ax=None, lw=8):
-    if(A.shape[1]!=2):
-        print "[ERROR in plot_inequalities] matrix does not have 2 columns";
-        return;
-#    if(A.shape[0]!=len(b)):
+def plot_inequalities(F_com, f_com, x_bounds, y_bounds, ls='--', color='k', ax=None, lw=8):
+#    if(F_com.shape[1]!=2):
+#        print "[ERROR in plot_inequalities] matrix does not have 2 columns";
+#        return;
+
+#    if(F_com.shape[0]!=len(f_com)):
 #        print "[ERROR in plot_inequalities] matrix and vector does not have the same number of rows";
 #        return;
 
     if(ax==None):
         f, ax = plut.create_empty_figure();
-    p = np.zeros(2);     # p height
-    p_x = np.zeros(2);
-    p_y = np.zeros(2);
-    for i in range(A.shape[0]):
-        if(np.abs(A[i,1])>1e-13):
-            p_x[0] = x_bounds[0];   # p x coordinate
-            p_x[1] = x_bounds[1];   # p x coordinate
-            p[0] = p_x[0];
-            p[1] = 0;
-            p_y[0] = (b[i] - np.dot(A[i,:],p) )/A[i,1];
+    com = np.zeros(2);     # com height
+    com_x = np.zeros(2);
+    com_y = np.zeros(2);
+    for i in range(F_com.shape[0]):
+        if(np.abs(F_com[i,1])>1e-13):
+            com_x[0] = x_bounds[0];   # com x coordinate
+            com_x[1] = x_bounds[1];   # com x coordinate
+            com[0] = com_x[0];
+            com[1] = 0;
+            com_y[0] = (-f_com[i] - np.dot(F_com[i,:],com) )/F_com[i,1];
             
-            p[0] = p_x[1];
-            p_y[1] = (b[i] - np.dot(A[i,:],p) )/A[i,1];
+            com[0] = com_x[1];
+            com_y[1] = (-f_com[i] - np.dot(F_com[i,:],com) )/F_com[i,1];
+            #plt.ylim( y_bounds[0]-1, y_bounds[1]+1 )
+            ax.plot(com_x, com_y, ls=ls, color=color, linewidth=lw);
+        elif(np.abs(F_com[i,0])>1e-13):
+            com_y[0] = y_bounds[0];
+            com_y[1] = y_bounds[1];
+            com[0] = 0;
+            com[1] = com_y[0];
+            com_x[0] = (-f_com[i] - np.dot(F_com[i,:],com) )/F_com[i,0];
     
-            ax.plot(p_x, p_y, ls=ls, color=color, linewidth=lw);
-        elif(np.abs(A[i,0])>1e-13):
-            p_y[0] = y_bounds[0];
-            p_y[1] = y_bounds[1];
-            p[0] = 0;
-            p[1] = p_y[0];
-            p_x[0] = (b[i] - np.dot(A[i,:],p) )/A[i,0];
-    
-            p[1] = p_y[1];
-            p_x[1] = (b[i] - np.dot(A[i,:],p) )/A[i,0];
-            ax.plot(p_x, p_y, ls=ls, color=color, linewidth=lw);
+            com[1] = com_y[1];
+            com_x[1] = (-f_com[i] - np.dot(F_com[i,:],com) )/F_com[i,0];
+            ax.plot(com_x, com_y, ls=ls, color=color, linewidth=lw);
         else:
             pass;
-#            print "[WARNING] Could not print one inequality as all coefficients are 0: A[%d,:]=[%f,%f]" % (i,A[i,0],A[i,1]);
+#            print "[WARNING] Could not print one inequality as all coefficients are 0: F_com[%d,:]=[%f,%f]" % (i,F_com[i,0],F_com[i,1]);
     return ax;
 
-''' Plot the polytope A*x<=b with vectices V '''
-def plot_polytope(A, b, V=None, color='b', ax=None, plotLines=True, lw=4):
-    A = np.asarray(A);
-    b = np.asarray(b);
+''' Plot the polytope A*x+b>=0 with vectices V '''
+def plot_polytope(A, b, V=None, color='b', ax=None, plotLines=False, lw=2,label=None,dots=True):
     
+    # find points   
+    (points, I) = arbitrary_face_to_span(-A, b);  
+     
     if(ax==None):
         f, ax = plut.create_empty_figure();
-    
+        
+    n = b.shape[0];     
+    if(n<2):
+        return (ax,None);
     if(V==None):
-        try:
-            V = poly_face_to_span(A,b).T;
-        except (ValueError,NotPolyFace) as e:
-            print "WARNING: "+str(e);
-
-    if(V==None):
-        X_MIN = -1.;
-        X_MAX = 1.;
-        Y_MIN = -1.;
-        Y_MAX = 1.;
-    else:
-        X_MIN = np.min(V[:,0]);
-        X_MAX = np.max(V[:,0]);
-        X_MIN -= 0.1*(X_MAX-X_MIN);
-        X_MAX += 0.1*(X_MAX-X_MIN);
+        V = np.zeros(((points.shape[1])*2,2));
+        '''
+        for i in range(n):
+            V[i,:] = find_intersection(A[i,:], b[i], A[(i+1)%n,:], b[(i+1)%n]);
+        '''
+        index = 0
+        # Find line segments
+        for i in range(n): 
+            line = check_point_in_line(A[i,:], b[i],points)
+            line = line[0:2,:]            
+            if  str(type(line)) == "<type 'numpy.ndarray'>":
+                V[index:index+2,:] = line;
+                index+=2;
+      
+                 
+#    print "Polytope vertices:", V
+    min_x = min(points[0,:]) ; min_y = min(points[1,:]) ;
     
-        Y_MIN = np.min(V[:,1]);
-        Y_MAX = np.max(V[:,1]);
-        Y_MIN -= 0.1*(Y_MAX-Y_MIN);
-        Y_MAX += 0.1*(Y_MAX-Y_MIN);
-    
+    max_x = max(points[0,:]) ; max_y = max(points[1,:]) ;
+    #print '-----'
+    #print min_x,max_x;
+    #print min_y,max_y;
     if(plotLines):
-        plot_inequalities(A, b, [X_MIN,X_MAX], [Y_MIN,Y_MAX], color=color, ls='--', ax=ax, lw=lw);
+        plot_inequalities(A, b, [min_x,max_x], [min_y,max_y], color=color, ls='--', ax=ax, lw=lw);
     n = b.shape[0];    
     if(n<2):
         return (ax,None);
+        
+    xx = np.zeros(2);
+    yy = np.zeros(2); 
+    c = color;
+    for i in range(0,V.shape[0],2):
+        xx[0] = V[i,0];
+        xx[1] = V[(i+1),0];
+        yy[0] = V[i,1];
+        yy[1] = V[(i+1),1];
+        if(c == 'ordered'):
+            color = COLOR[(i/2)]
+        if (label == None) or (i<(V.shape[0]-2)):
+            line, = ax.plot(xx, yy, color=color, ls='-', lw=2*lw);
+        else:
+            line, = ax.plot(xx, yy, color=color, ls='-', lw=2*lw, label=label);
     
-    line = None;
-    if(V!=None):
-        xx = np.zeros(2);
-        yy = np.zeros(2);
-        for i in range(n):
-            xx[0] = V[i,0];
-            xx[1] = V[(i+1)%n,0];
-            yy[0] = V[i,1];
-            yy[1] = V[(i+1)%n,1];
-            line, = ax.plot(xx, yy, color='r', ls='o', markersize=30); #, lw=2*lw);
-        ax.set_xlim([X_MIN, X_MAX]);
-        ax.set_ylim([Y_MIN, Y_MAX]);
-    
+    if(dots): 
+        ax.scatter(points[0,:],points[1,:],s=100,color=color)
     return (ax, line);
+
     
 def compute_convex_hull(S):
     """

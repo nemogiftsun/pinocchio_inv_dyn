@@ -29,7 +29,7 @@ import math
             
             
 np.set_printoptions(precision=2, suppress=True);
-plot_utils.FIGURE_PATH = '../results/test_unreachable/2cmcom10percmass/';
+plot_utils.FIGURE_PATH = '../results/test_reachable/check/';
 #plot_utils.FIGURE_PATH = '../results/test_drill/check/';
 print 'Analyze data in folder', plot_utils.FIGURE_PATH;
 
@@ -48,7 +48,7 @@ N_DIR = 0;
 if(N_DIR<=0):
     N_DIR = len(os.listdir(plot_utils.FIGURE_PATH));
     N_TESTS=N_DIR
-N_SOLVERS = 2;
+N_SOLVERS = 3;
 TEXT_FILE_NAME = 'stats.txt';
 dt = 0.002;
 MAX_TIME = 6.0-dt;
@@ -62,7 +62,7 @@ WALL_COLOR = (135.0/255, 74.0/255, 13.0/255, 0.95);
 
 
 line_styles     =["k-", "b--", "r:", "c-", "g-"];
-solver_names    = ['Classic','Robust'];
+solver_names    = ['Classic','Robust','Robust_vel'];
 viewer_utils.ENABLE_VIEWER = True;
 time_to_reach        = np.zeros((N_DIR,N_SOLVERS));
 task_error          = np.zeros((N_DIR,N_SOLVERS));
@@ -138,10 +138,11 @@ for dirname in os.listdir(plot_utils.FIGURE_PATH):
 #            tmax[i,s] = time_to_fall[i,s] 
 #        else:
 #            tmax[i,s] = itmax[i,s]*dt 
+        '''
         time_to_reach[i,s] = 0
         task_error[i,s] = 0
         if falls[i,s] == 0:
-            for c in range(1000,rh_task_error.shape[1]):
+            for c in range(200,rh_task_error.shape[1]):
                 if np.max(np.abs(vel[s]),axis=0)[c] < 5e-3: 
                    itzerov[i,s] = c;
                    task_error[i,s] = rh_task_error[s,itzerov[i,s]]
@@ -149,7 +150,17 @@ for dirname in os.listdir(plot_utils.FIGURE_PATH):
                    break;
         if time_to_reach[i,s] == 0:
            real_falls[i,s] = 1
-
+        '''
+        if falls[i,s] == 0:
+            task_error[i,s] = rh_task_error[s,itmax[i,s]]
+            '''
+            for c in range(200,rh_task_error.shape[1]):
+                if np.max(np.abs(vel[s]),axis=0)[c] < 1e-3: 
+                   itzerov[i,s] = c;
+                   task_error[i,s] = rh_task_error[s,itzerov[i,s]]
+                   time_to_reach[i,s] = itzerov[i,s] *dt
+                   break;
+            '''      
         #time_to_reach[i,s] = max(itzerov[i,s]*dt,time_to_reach[i,s])
         #task_error[i,s] = rh_task_error[s,int(time_to_reach[i,s]/dt)]
                   
@@ -227,20 +238,18 @@ info += "====================================="+'\n';
 info += "Number of fails detected "+'\n';
 info += "====================================="+'\n';
 info += "Classic Controller = "+str(falls.sum(axis=0)[0])+'\n';
-info += "Robust Controller = "+str(falls.sum(axis=0)[1])+'\n\n';
-info += "Number of real fails(includes the undetected)"+'\n';
-info += "====================================="+'\n';
-info += "Classic Controller = "+str(real_falls.sum(axis=0)[0])+'\n';
-info += "Robust Controller = "+str(real_falls.sum(axis=0)[1])+'\n\n';
+info += "Robust Controller = "+str(falls.sum(axis=0)[1])+'\n';
+info += "Robust Controller with Velocity Uncertainties= "+str(falls.sum(axis=0)[2])+'\n\n';
 info += "Mean task error for both solvers:\n";
 info += "====================================="+'\n';
 info += "Classic Controller(in m) = "+str(avg_error[0])+'\n';
-info += "Robust Controller(in m)  = "+str(avg_error[1])+'\n\n';
+info += "Robust Controller(in m)  = "+str(avg_error[1])+'\n';
+info += "Robust Controller with Uncertainties (in m)  = "+str(avg_error[2])+'\n\n';
 info += "Mean Task time for both solvers:\n"
 info += "====================================="+'\n';
 info += "Classic Controller(in secs) = "+str(avg_time[0])+'\n';
-info += "Robust Controller(in secs)  = "+str(avg_time[1])+'\n\n';
-
+info += "Robust Controller(in secs)  = "+str(avg_time[1])+'\n';
+info += "Robust Controller with uncertainties(in secs)  = "+str(avg_time[2])+'\n\n';
 
 #info += "Scores:\n"+str(np.sum(scores,0))+'\n';
 

@@ -22,6 +22,7 @@ class InvDynFormulation (object):
     
     ENABLE_JOINT_LIMITS         = True;
     ENABLE_CAPTURE_POINT_LIMITS = False;
+    INCLUDE_VEL_UNCERTAINTIES = False;
     ENABLE_CAPTURE_POINT_LIMITS_ROBUST = False;
     ENABLE_TORQUE_LIMITS        = True;
     ENABLE_FORCE_LIMITS         = True;
@@ -254,125 +255,270 @@ class InvDynFormulation (object):
         self.inertiaError = invdyn_configs.inertiaError;
         self.V,self.N = invdyn_configs.vcom,invdyn_configs.ncom
     #WORK NEED TO BE DONE#    
-    def computeGlobalCOMPolytope(self,V,N):
+#    def computeGlobalCOMPolytope(self,V,N):
+#        # initialize params
+#        joint_ns = 31     
+#        #flagged_ns = len(self.r.mass)
+#        vlinks_sum= np.matlib.zeros((2,self.B_sp.shape[0]))
+#        vlinks_vel_sum= np.matlib.zeros((2,self.B_sp.shape[0]))        
+#        # works only when map_index shape equals the number of polytope
+#        totalmass = 0
+#        for i in range(joint_ns):
+#            idx = self.r.model.names[i+1]
+#            fid = self.getFrameId(idx)  
+#            a = int(np.sum(N[0,0:i]))
+#            b = int(N[0,i]+a) 
+#            vlink = np.matlib.zeros((3,int(N[0,i])))
+#            m = 0
+#            for j in range(a,b):
+#                vlink[:,m] = self.r.data.oMi[i+1].act(V[:,j])                
+#                m += 1
+#            while True:
+#                try:
+#                    Av,bv = poly_span_to_face(np.asarray(vlink))
+#                except:
+#                    r = np.ones((vlink.shape[0],vlink.shape[1]))*1e-1;
+#                    vlink = vlink +r    
+#                    print '---Exception----'
+#                    print i
+#                    print '----------------'
+#                    continue     
+#                break 
+#            # compute velocity
+#            #V_LINK_VEL = np.matlib.zeros((3,V_link.shape[1]))    
+#            vlink_vel = np.matlib.zeros((3,vlink.shape[1]))   
+#            for pt in range(vlink.shape[1]): 
+#                p = skew(vlink[:,pt])
+#                vlink_jc = self.r.frameJacobian(self.q,fid)[0:3,:]- p*self.r.frameJacobian(self.q,fid)[3:6,:]
+#                vlink_vel[:,pt] = np.dot(vlink_jc,self.v)
+#                 
+#            # multiply with mass
+#            mass_links_bound = [self.r.model.inertias[i+1].mass-(self.r.model.inertias[i+1].mass*self.MAX_MASS_ERROR),self.r.model.inertias[i+1].mass+(self.r.model.inertias[i+1].mass*self.MAX_MASS_ERROR)]  
+#            V_mlb = mass_links_bound[0]*vlink
+#            V_mhb = mass_links_bound[1]*vlink
+#            V_vel_mlb = mass_links_bound[0]*vlink_vel
+#            V_vel_mhb = mass_links_bound[1]*vlink_vel            
+#            V_link = np.hstack((V_mhb,V_mlb))
+#            V_link_vel =  np.hstack((V_vel_mhb,V_vel_mlb))
+#            ##NEW##                
+#           #V_link_vel = np.matlib.zeros(V_link.shape)         
+#            V_link_t = se3.SE3.Identity()
+#              
+#            ##NEW##
+#            #Alink,blink = compute_convex_hull(V_link[0:3,:])
+#            #V_link = poly_face_to_span(-Alink,blink)
+#            #V_link = np.vstack((V_link,np.zeros((0,V_link.shape[1]))))
+#            ##NEW##        
+#            '''
+#            V_link_frame = np.copy(V_link)
+#            for col in range(V_link.shape[1]): 
+#                #print np.asmatrix(V_link[:,col])
+#                #print V_link_t.translation[0:2]
+#                V_link_t.translation = np.asmatrix(V_link[:,col]).T
+#                V_link_frame[:,col] = (self.r.data.oMi[i+1].inverse()*V_link_t).translation.T  
+#            '''  
+# 
+##            for pt in range(V_link.shape[1]): 
+##                p = skew(np.hstack((V_link[:,pt],0)))
+##                V_LINK_JC = self.r.frameJacobian(self.q,fid)[0:3,:]+ p*self.r.frameJacobian(self.q,fid)[3:6,:]
+##                V_LINK_VEL[:,pt] = np.dot(V_LINK_JC,self.v)                             
+##            frameVel = self.r.frameVelocity(fid)
+##            V_link =  np.vstack((V_link,np.zeros((1,V_link.shape[1]))))
+##            #V_link_vel = frameVel.linear + skew(frameVel.angular)*V_link
+##            V_link_vel = V_LINK_VEL
+#            print V_link_vel
+#            print V_link
+#            while True:
+#                try:
+#                    Alink,blink = compute_convex_hull(V_link[:,:])
+#                    V_link = poly_face_to_span(-Alink,blink)
+#                    print V_link
+#                    Alink,blink = compute_convex_hull(V_link_vel[:,:])
+#                    V_link_vel = poly_face_to_span(-Alink,blink)                    
+#                    #V_link = np.vstack((V_link,np.zeros((0,V_link.shape[1]))))
+#                    ##NEW##        
+#                    '''
+#                    V_link_frame = np.copy(V_link)
+#                    for col in range(V_link.shape[1]): 
+#                        #print np.asmatrix(V_link[:,col])
+#                        #print V_link_t.translation[0:2]
+#                        V_link_t.translation = np.asmatrix(V_link[:,col]).T
+#                        V_link_frame[:,col] = (self.r.data.oMi[i+1].inverse()*V_link_t).translation.T  
+#                    '''                        
+##                    for pt in range(V_link.shape[1]): 
+##                        #print V_link
+##                        ps = self.r.data.oMi[i+1].act(V_link[:,pt])
+##                        #ps = self.r.data.oMi[i+1].act(np.hstack((V_link[:,pt],0)))
+##                        p = skew(ps)
+##                        V_LINK_JC = self.r.frameJacobian(self.q,fid)[0:3,:]- p*self.r.frameJacobian(self.q,fid)[3:6,:]
+##                        V_LINK_VEL[:,pt] = np.dot(V_LINK_JC,self.v)                             
+##                    #frameVel = self.r.frameVelocity(fid)
+##                    #ADD##V_link =  np.vstack((V_link,np.zeros((1,V_link.shape[1]))))
+##                    #V_link_vel = frameVel.linear + skew(frameVel.angular)*V_link
+##                    V_link_vel = V_LINK_VEL
+#                    ##NEW##   
+#                except:
+#                    vadd = np.ones((V_link.shape[0],V_link.shape[1]))*1e3
+#                    V_link += vadd
+#                    print 'Numerical Inconsistency'
+#                    return self.vcom,self.vdcom,self.vcom_v,self.vdcom1
+#                break        
+#            vlinknew = np.zeros((2,self.B_sp.shape[0]))
+#            vlinknew_vel = np.zeros((2,self.B_sp.shape[0]))
+#            for k in range(self.B_sp.shape[0]):
+#                ### com ###
+#                # find out vertex that minimizes the dot product of each face with the vertices.
+#                index_com = np.argmin(np.dot(self.B_sp[k,:],V_link[0:2,:]))
+#                # update the newly approximated polytope
+#                ##NEW##
+#                omega   = np.sqrt(9.81/self.x_com[2,0]);
+#                V_link_vel_c = (self.dt+1/omega)*V_link_vel                
+#                index_com_v = np.argmin(np.dot(self.B_sp[k,:],V_link_vel_c[0:2,:]))                         
+#                vlinknew_vel[:,k] = np.copy(np.matrix(V_link_vel[0:2,index_com_v])).T 
+#                ##NEW##                
+#                vlinknew[:,k] = np.copy(np.matrix(V_link[0:2,index_com]))                  
+#            vlinks_sum += vlinknew 
+#            vlinks_vel_sum += vlinknew_vel
+#            
+#            vlever = self.r.data.oMi[i+1].act(self.r.model.inertias[i+1].lever)*self.r.model.inertias[i+1].mass
+#            Aln,bln = compute_convex_hull(vlinknew)
+#            d,res1 = check_point_polytope(Aln,bln,vlever[0:2]) 
+#            totalmass += self.r.model.inertias[i+1].mass
+#
+#        vcomc = (1/totalmass)*vlinks_sum
+#        vcomc_vel = (1/totalmass)*vlinks_vel_sum 
+#        #print '---'
+#        #print self.dx_com
+#        #print vcomc_vel
+#        #print '~~~'
+#        Aln,bln = compute_convex_hull(vcomc)        
+#        vdcomc = np.matlib.zeros((vcomc.shape[0],vcomc.shape[1]))      
+#        vdcomc_1 = np.matlib.zeros((vcomc.shape[0],vcomc.shape[1]))   
+#        for k in range(vcomc.shape[1]):
+#            comxy = np.copy(vcomc[:,k])
+#            comvelxy = np.copy(vcomc_vel[:,k])
+#            vdcomc_1[:,k] =comxy + comvelxy[0:2]/np.sqrt(9.81/self.x_com[2])
+#            vdcomc[:,k] =  comxy + self.dx_com[0:2]/np.sqrt(9.81/self.x_com[2]) 
+##        print '---'
+##        print vdcomc
+##        print vdcomc_1
+##        print '~~~' 
+#        '''  
+#        d,res1 = check_point_polytope(Aln,bln,self.com_pinocchio[0:2]) 
+#        if res1 == False:
+#            print 'The global com polytope doesnt contain the nominal com '
+#            for m in range(d.shape[1]):
+#                 print d[0,m]
+#            #(ax,l) =  plot_polytope(Aln, bln, V=None,color='ordered',ax=None,lw=2,dots=False)  
+#            #ax.scatter(self.compinocchio[0,0],self.compinocchio[1,0],400,color=COLOR[34],marker='o',label=str(4))              
+#        '''
+#        return vcomc,vdcomc,vcomc_vel,vdcomc_1              
+
+    #WORK NEED TO BE DONE#    
+    def computeGlobalCOMPolytopeModified(self,V,N):
         # initialize params
         joint_ns = 31     
-        #flagged_ns = len(self.r.mass)
         vlinks_sum= np.matlib.zeros((2,self.B_sp.shape[0]))
-        vlinks_vel_sum= np.matlib.zeros((2,self.B_sp.shape[0]))        
+        vlinks_vel_sum= np.matlib.zeros((2,self.B_sp.shape[0]))  
         # works only when map_index shape equals the number of polytope
         totalmass = 0
         for i in range(joint_ns):
+            idx = self.r.model.names[i+1]
+            fid = self.getFrameId(idx)  
+            frameVel = self.r.frameVelocity(fid)
+            frameJacobian = self.r.frameJacobian(self.q,fid,False,False)
+            nommass = self.r.model.inertias[i+1].mass
             a = int(np.sum(N[0,0:i]))
             b = int(N[0,i]+a) 
             vlink = np.matlib.zeros((3,int(N[0,i])))
+            vlink_vel = np.matlib.zeros((3,vlink.shape[1])) 
             m = 0
             for j in range(a,b):
-                vlink[:,m] = self.r.data.oMi[i+1].act(V[:,j])
+                vlink[:,m] = self.r.data.oMi[i+1].act(V[:,j])                
                 m += 1
             while True:
                 try:
-                    Av,bv = poly_span_to_face(np.asarray(vlink))
+                    Av,bv = compute_convex_hull(vlink)
+                    vlink = poly_face_to_span(-Av,bv) 
+                    #vlink[2,:] = np.matlib.zeros((1,vlink.shape[1]))
+                    #vlink_vel = frameVel.linear + np.dot(skew(frameVel.angular),vlink)
+                    for pt in range(vlink.shape[1]): 
+                        #p = skew(self.r.data.oMi[i+1].act(vlink[:,pt]))
+                        #vlink[2,pt] = 0
+                        #p = skew(vlink[:,pt])
+                        #vlink_jc = self.r.frameJacobian(self.q,fid)[0:3,:]- p*self.r.frameJacobian(self.q,fid)[3:6,:]
+                        #vlink_vel[:,pt] = np.dot(vlink_jc,self.v) 
+                        #print 'it'
+                        #print vlink[:,pt].T
+                        #print np.dot(skew(frameVel.angular),vlink[:,pt].T)
+                        skew_vlink = skew(np.asmatrix(vlink[:,pt]).T)
+                        jp = frameJacobian[0:3,:]- skew_vlink*frameJacobian[3:6,:]
+                        vlink_vel[:,pt] = jp * self.v
+                        #vlink_vel[:,pt] = frameVel.linear + np.dot(skew(frameVel.angular),np.asmatrix(vlink[:,pt]).T)
+                        #vlink_vel = frameVel.linear + np.dot(skew(frameVel.angular),vlink[:,pt])
+                        #print pt
+                    #print vlink_vel
                 except:
                     r = np.ones((vlink.shape[0],vlink.shape[1]))*1e-1;
                     vlink = vlink +r    
                     print '---Exception----'
                     print i
                     print '----------------'
+                    return self.vcom,self.vdcom,self.vcom_v,self.vdcom1
                     continue     
-                break 
+                break       
             # multiply with mass
             mass_links_bound = [self.r.model.inertias[i+1].mass-(self.r.model.inertias[i+1].mass*self.MAX_MASS_ERROR),self.r.model.inertias[i+1].mass+(self.r.model.inertias[i+1].mass*self.MAX_MASS_ERROR)]  
             V_mlb = mass_links_bound[0]*vlink
             V_mhb = mass_links_bound[1]*vlink
+            V_vel_mlb = mass_links_bound[0]*vlink_vel
+            V_vel_mhb = mass_links_bound[1]*vlink_vel            
             V_link = np.hstack((V_mhb,V_mlb))
-            ##NEW##
+            V_link_vel =  np.hstack((V_vel_mhb,V_vel_mlb))     
+            vlinknew = np.zeros((2,self.B_sp.shape[0]))          
+            omega   = np.sqrt(9.81/self.x_com[2,0]);
+            vlinknew_vel = np.zeros((2,self.B_sp.shape[0]))
             '''
-            V_link_vel = np.matlib.zeros(V_link.shape)
-            V_link_t = se3.SE3.Identity()
+            angle_res = np.deg2rad(360/20);
+            coml = self.r.data.oMi[i+1].act(self.r.model.inertias[i+1].lever)
+            scoml = skew(coml)
+            jp = frameJacobian[0:3,:]- scoml*frameJacobian[3:6,:]
+            vlinknew_vel_2 = jp * self.v
+            vlinknew_vel_2 = nommass *  vlinknew_vel_2
             '''
-            ##NEW##
-            while True:
-                try:
-                    Alink,blink = compute_convex_hull(V_link[0:2,:])
-                    V_link = poly_face_to_span(-Alink,blink)
-                    ##NEW##                    
-                    '''
-                    V_link_frame = np.copy(V_link_vel)
-                    for col in range(V_link.shape[1]): 
-                        V_link_t.translation = np.asmatrix(V_link[:,col]).T
-                        #print V_link_frame[:,col]
-                        V_link_frame[:,col] = (self.r.data.oMi[i+1].inverse()*V_link_t).translation.T  
-                    fid = self.getFrameId(self.r.model.names[i+1])
-                    frameVel = self.r.frameVelocity(fid)
-                    V_link_vel = frameVel.linear + skew(frameVel.angular)*V_link_frame  
-                    '''
-                    ##NEW##   
-                except:
-                    vadd = np.ones((V_link.shape[0],V_link.shape[1]))*1e3
-                    V_link += vadd
-                    print 'Numerical Inconsistency'
-                    return self.vcom,self.vdcom,self.vcom_v
-                break        
-            vlinknew = np.zeros((2,self.B_sp.shape[0]))
-            #vlinknew_vel = np.zeros((2,self.B_sp.shape[0]))
+            V_link_vel_c = (self.dt+1/omega)*V_link_vel
             for k in range(self.B_sp.shape[0]):
-                ### com ###
-                # find out vertex that minimizes the dot product of each face with the vertices.
+                ### com ###      
+                #Bst_sp = np.matrix((np.cos(k*angle_res),np.sin(k*angle_res)))
+                #index_com_v = np.argmin(np.dot(Bst_sp,V_link_vel[0:2,:])) 
+                #index_com = np.argmin(np.dot(Bst_sp,V_link[0:2,:]))
+                index_com_v = np.argmin(np.dot(self.B_sp[k,:],V_link_vel_c[0:2,:])) 
                 index_com = np.argmin(np.dot(self.B_sp[k,:],V_link[0:2,:]))
-                # update the newly approximated polytope
-                ##NEW##
-                '''
-                omega   = np.sqrt(9.81/V_link[2,0]);
-                V_link_vel_c = (self.dt+1/omega)*V_link_vel                
-                index_com_v = np.argmax(np.dot(self.B_sp[k,:],V_link_vel[0:2,:]))                         
-                #index_com = np.argmin(np.dot(self.B_sp[k,:],V_link))
-                vlinknew_vel[:,k] = np.copy(np.matrix(V_link_vel[0:2,index_com_v])).T 
-                '''
-                ##NEW##                
-                vlinknew[:,k] = np.copy(np.matrix(V_link[0:2,index_com]))                  
-            vlinks_sum += vlinknew 
-            #vlinks_vel_sum += vlinknew_vel
-            
+                vlinknew[:,k] = np.copy(np.matrix(V_link[0:2,index_com]))                                        
+                vlinknew_vel[:,k] = np.copy(np.matrix(V_link_vel[0:2,index_com_v])).T                  
+            vlinks_sum += vlinknew
+            vlinks_vel_sum += vlinknew_vel
+            #vlinks_vel_sum_2 += vlinknew_vel_2  
             vlever = self.r.data.oMi[i+1].act(self.r.model.inertias[i+1].lever)*self.r.model.inertias[i+1].mass
             Aln,bln = compute_convex_hull(vlinknew)
             d,res1 = check_point_polytope(Aln,bln,vlever[0:2]) 
             totalmass += self.r.model.inertias[i+1].mass
-
         vcomc = (1/totalmass)*vlinks_sum
-        vcomc_vel = (1/totalmass)*vlinks_vel_sum 
-        '''
-        print 'computed'
-        print self.x_com
-        print vcomc
-        print vcomc_vel
-        print self.dx_com
-        '''
-        Aln,bln = compute_convex_hull(vcomc)
-        
-        vdcomc = np.matlib.zeros((vcomc.shape[0],vcomc.shape[1]))
-        
-        
-         
+        vcomc_vel = (1/totalmass)*vlinks_vel_sum
+        Aln,bln = compute_convex_hull(vcomc)        
+        vdcomc = np.matlib.zeros((vcomc.shape[0],vcomc.shape[1]))      
+        vdcomc_1 = np.matlib.zeros((vcomc.shape[0],vcomc.shape[1])) 
         for k in range(vcomc.shape[1]):
             comxy = np.copy(vcomc[:,k])
-            vdcomc[:,k] =comxy + self.dx_com[0:2]/np.sqrt(9.81/self.x_com[2])
-            #vdcomc[:,k] =  comxy + self.dx_com[0:2]/np.sqrt(9.81/self.x_com[2]) 
-        '''  
-        d,res1 = check_point_polytope(Aln,bln,self.com_pinocchio[0:2]) 
-        if res1 == False:
-            print 'The global com polytope doesnt contain the nominal com '
-            for m in range(d.shape[1]):
-                 print d[0,m]
-            #(ax,l) =  plot_polytope(Aln, bln, V=None,color='ordered',ax=None,lw=2,dots=False)  
-            #ax.scatter(self.compinocchio[0,0],self.compinocchio[1,0],400,color=COLOR[34],marker='o',label=str(4))              
-        '''
-        return vcomc,vdcomc,vcomc_vel              
+            comvelxy = np.copy(vcomc_vel[:,k])
+            vdcomc_1[:,k] =comxy +comvelxy[0:2]/np.sqrt(9.81/self.x_com[2])
+            vdcomc[:,k] =  comxy + self.dx_com[0:2]/np.sqrt(9.81/self.x_com[2]) 
+        return vcomc,vdcomc,vcomc_vel,vdcomc_1    
       
     def updateGlobalCOMPolytope(self):
         #q = toPinocchio(self.q)
         #self.com_pinocchio = se3.centerOfMass(self.r.model,self.r.data,self.q,True)
-        self.vcom,self.vdcom,self.vcom_v = self.computeGlobalCOMPolytope(self.V,self.N)
+        self.vcom,self.vdcom,self.vcom_v,self.vdcom1 = self.computeGlobalCOMPolytopeModified(self.V,self.N)
                 
     def getFrameId(self, frameName):
         if(self.r.model.existFrame(frameName)==False):
@@ -521,7 +667,8 @@ class InvDynFormulation (object):
         self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST = not(enable);
         self.updateInequalityData();
 
-    def enableCapturePointLimitsRobust(self, enable=True):
+    def enableCapturePointLimitsRobust(self, enable=True,enableVel=False):
+        self.INCLUDE_VEL_UNCERTAINTIES = enableVel;
         self.ENABLE_CAPTURE_POINT_LIMITS_ROBUST = enable;
         self.ENABLE_CAPTURE_POINT_LIMITS = not(enable);
         self.MAX_MASS_ERROR = self.inertiaError[0]
@@ -723,10 +870,21 @@ class InvDynFormulation (object):
         # B_sp are the normals defining the directions of interest in a support polygon.
         # x_com and dx_com should correspond to maximum regions points of the the capture polygon
         c    = np.copy(self.b_sp);
+        
+        '''
+        angle_res = np.deg2rad(20/16); 
+        for i in range(16):
+                ### com ###      
+                Bst_sp = np.matrix((np.cos(i*angle_res),np.sin(i*angle_res)))
+                
+                c[i,0] = c[i,0] + np.dot(Bst_sp,self.vcom[:,i]+ ((dt+1/omega)*self.vcom_v[:,i]+((0.5*dt*dt + dt/omega)*self.dd_com[0:2])).T.T);         
+        '''
         for i in range(self.B_sp.shape[0]):
-            c[i,0] = c[i,0] + np.dot(self.B_sp[i,:],self.vcom[:,i]+ ((dt+1/omega)*dx_com+((0.5*dt*dt + dt/omega)*self.dd_com[0:2])).T.T);         
-            #c[i,0] = c[i,0] + np.dot(self.B_sp[i,:],self.vcom[:,i]+ ((dt+1/omega)*dx_com+((0.5*dt*dt + dt/omega)*self.dd_com[0:2])).T.T);         
-
+           #c[i,0] = c[i,0] + np.dot(self.B_sp[i,:],self.vcom[:,i]+ ((dt+1/omega)*dx_com+((0.5*dt*dt + dt/omega)*self.dd_com[0:2])).T.T);  
+           if self.INCLUDE_VEL_UNCERTAINTIES == True:
+               c[i,0] = c[i,0] + np.dot(self.B_sp[i,:],self.vcom[:,i]+ ((dt+1/omega)*self.vcom_v[:,i]+((0.5*dt*dt + dt/omega)*self.dd_com[0:2])).T.T);         
+           else:
+               c[i,0] = c[i,0] + np.dot(self.B_sp[i,:],self.vcom[:,i]+ ((dt+1/omega)*dx_com+((0.5*dt*dt + dt/omega)*self.dd_com[0:2])).T.T); 
         return (B,c);         
 
     def createJointAccInequalitiesViability(self):
