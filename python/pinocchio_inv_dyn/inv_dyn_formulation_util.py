@@ -26,6 +26,7 @@ class InvDynFormulation (object):
     ENABLE_CAPTURE_POINT_LIMITS_ROBUST = False;
     ENABLE_TORQUE_LIMITS        = True;
     ENABLE_FORCE_LIMITS         = True;
+    POLYTOPE_MARGIN             = 0;
 
     #MAX_COM_ERROR = 0.0
     #MAX_MASS_ERROR = 0.0
@@ -621,8 +622,9 @@ class InvDynFormulation (object):
                     self.b_sp[i]   /= tmp;
 
             # add a margin in the support polygon for safety reason
-            self.b_sp -= 0.005
             
+            self.b_sp -= self.POLYTOPE_MARGIN
+            print self.b_sp
 #            self.plotSupportPolygon();
             self.B_sp = np.matrix(self.B_sp);
             self.b_sp = np.matrix(self.b_sp).T;  

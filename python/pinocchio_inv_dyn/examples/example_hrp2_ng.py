@@ -95,7 +95,7 @@ def updateConstraints(t, q, v, invDynForm, contacts):
     return contact_changed;
     
             
-def startSimulation(q0, v0, j):
+def startSimulation(q0, v0, j,safety_margin):
     FIRST_TARGET_REACHED=False
     solverId = conf.SOLVER_TO_INTEGRATE[j]
     print '\nGONNA INTEGRATE CONTROLLER %d' % solverId;
@@ -108,7 +108,9 @@ def startSimulation(q0, v0, j):
     t = 0;
     # CHECK CHECK CHECK
     
-    if solverId == conf.SOLVER_CLASSIC:                                    
+    invDynForm.POLYTOPE_MARGIN = safety_margin;
+    if (solverId == conf.SOLVER_CLASSIC_WITH_AVG) or (solverId == conf.SOLVER_CLASSIC_WITH_MIN) or (solverId == conf.SOLVER_CLASSIC_WITH_REG) or (solverId == conf.SOLVER_CLASSIC_WITH_MAX):   
+        invDynForm.setNewSensorData(0, q0, v0);                                 
         invDynForm.enableCapturePointLimits(conf.ENABLE_CAPTURE_POINT_LIMITS);
     elif solverId == conf.SOLVER_ROBUST:
         invDynForm.setNewSensorData(0, q0, v0);
@@ -118,6 +120,8 @@ def startSimulation(q0, v0, j):
         invDynForm.enableCapturePointLimitsRobust(conf.ENABLE_CAPTURE_POINT_LIMITS,True);        
                 
     simulator.reset(t, q0, v0, conf.dt);
+    print 'The Polytope Safety Margin is '
+    print invDynForm.POLYTOPE_MARGIN
     
     contact_names  = [con.name for con in invDynForm.rigidContactConstraints];
     contact_sizes  = [con.dim for con in invDynForm.rigidContactConstraints];
@@ -140,7 +144,7 @@ def startSimulation(q0, v0, j):
         rh_current_tr = simulator.r.framePosition(simulator.r.model.getFrameId('RARM_JOINT5')).translation
         rh_task_error[j,i] = np.linalg.norm(rh_current_tr - rh_des_tr);
         if (FIRST_TARGET_REACHED==False) and (i!=0): 
-                if(( rh_task_error[j,i] < 5e-3) and (np.max(np.abs(v[j][:,i]))<0.001)):
+                if(( rh_task_error[j,i] < 5e-3 or conf.RH_TASK_SWITCH == conf.UNREACHABLE) and (np.max(np.abs(v[j][:,i]))<0.001)):
                     print "\n\n First target reached in %.3f s!"%((t)),"Right hand task error",rh_task_error[j,i];
                     FIRST_TARGET_REACHED = True;
                     time_to_reach[j] = t;
@@ -246,20 +250,22 @@ def startSimulation(q0, v0, j):
 
         t += dt;
         sp_points = np.array(invDynForm.contact_points_reduced[0:2,:])
+        simulator.viewer.addPolytope('sp_controller',sp_points,robotName='robot1',color = [0,0.7,0.4,0.8])
         if (solverId == conf.SOLVER_ROBUST or solverId == conf.SOLVER_ROBUST_VEL):
             simulator.viewer.addPolytope('capture point polytope',invDynForm.vdcom,robotName='robot1',color = [1,0.8,1,1])        
             simulator.viewer.addPolytope('capture point polytope with velocity',invDynForm.vdcom1,robotName='robot1',color =[1,0,0,1])  
+            
             #simulator.viewer.addPolytope('capture point polytope with velocity_1',invDynForm.vcom_v,robotName='robot1',color =[1,0,1,1])  
-        if(i%1000==0):
-            simulator.viewer.addPolytope('sp_controller',sp_points,robotName='robot1',color = [0,0.7,0.4,0.8])
-    
+        if(i%100==0):
+            simulator.viewer.addPolytope('sp_controller'+str(s),sp_points,robotName='robot1',color = [s,0.7,0.4,0.8])
+#    
         #simulator.viewer.addSphere('t1', 0.04, invDynForm.r.framePosition(invDynForm.getFrameId('RARM_JOINT6')).translation, color=(0.0, 0.2, 0, 1));
         #simulator.viewer.addSphere('t2', 0.04, invDynForm.r.framePosition(invDynForm.getFrameId('RARM_JOINT5')).translation, color=(0.0, 0.0, 0.5, 1));
 
 
 ''' *********************** BEGINNING OF MAIN SCRIPT *********************** '''
 seed = int(np.random.uniform(0, 1000))
-#seed = 2
+#seed = 336
 np.random.seed(seed)
 import random
 random.seed(seed);
@@ -268,7 +274,7 @@ print "Random seed", seed;
 np.set_printoptions(precision=2, suppress=True);
 date_time = datetime.now().strftime('%Y%m%d_%H%M%S');
 viewer_utils.ENABLE_VIEWER  = conf.ENABLE_VIEWER
-plot_utils.FIGURE_PATH      = '../results/test_reachable/'+date_time+'/'; #'_'+str(conf.SOLVER_TO_INTEGRATE).replace(' ', '_')+'/';
+plot_utils.FIGURE_PATH      = '../results/test_unreachable/'+date_time+'/'; #'_'+str(conf.SOLVER_TO_INTEGRATE).replace(' ', '_')+'/';
 plot_utils.SAVE_FIGURES     = conf.SAVE_FIGURES;
 plot_utils.SHOW_FIGURES     = conf.SHOW_FIGURES;
 plot_utils.SHOW_LEGENDS     = conf.SHOW_LEGENDS;
@@ -405,7 +411,10 @@ ROBOT_MOVE = np.array((0.5,0.5,-0.01))
 
 ''' Create the solvers '''
 solver_id       = StandardQpSolver(na, m_in, "qpoases", maxIter=conf.maxIter, verb=conf.verb);
-solvers = [solver_id,]*len(conf.SOLVER_TO_INTEGRATE);
+#if conf.SOLVER_CLASSIC in conf.SOLVER_TO_INTEGRATE:
+#    solvers = [solver_id,] * (len(conf.SOLVER_TO_INTEGRATE) + len(conf.SAFETY_MARGIN) - 1)
+#else:    
+solvers = [solver_id,] * len(conf.SOLVER_TO_INTEGRATE);
 N_SOLVERS = len(solvers);
 solver_names = [s.name for s in solvers];
 
@@ -473,17 +482,20 @@ if(conf.SAVE_DATA):
 
 #print simulator.r.model.inertias[simulator.r.model.getJointId('RARM_JOINT6')]
 
-for s in range(len(conf.SOLVER_TO_INTEGRATE)):
-#    if s == conf.SOLVER_ROBUST:
-#        invDynForm.ENA
-#    elif s == conf.SOLVER_CLASSIC:    
+
+
+
+#for i in conf.SAFETY_MARGIN:
+#    safetyMargin = i;
+for s in range(len(conf.SOLVER_TO_INTEGRATE)):   
 #    invDynForm = createInvDynFormUtil(q0, v0,invdyn_configs);
 #    simulator = createSimulator(q0, v0,simulator_configs);
 #    simulator.viewer.setVisibility("floor", "ON" if conf.SHOW_VIEWER_FLOOR else "OFF");
-    controller_balance[s] = startSimulation(q0, v0, s);
+            safetyMargin = conf.SAFETY_MARGIN[s];
+            controller_balance[s] = startSimulation(q0, v0, s,safetyMargin);
 #    cProfile.run('startSimulation(simulator.q, simulator.dq);');
 
-
+'''
 info = '';
 for j in range(len(conf.SOLVER_TO_INTEGRATE)):
     
@@ -498,10 +510,11 @@ for j in range(len(conf.SOLVER_TO_INTEGRATE)):
     tfile.write(info);
 info += "***********************************************************************************\n"
 print info
+'''
 
 if(conf.SAVE_DATA):
-    tfile.write(info);
-    tfile.close(); 
+    #tfile.write(info);
+    #tfile.close(); 
     path = plot_utils.FIGURE_PATH;
     imax = np.max((np.max(i_to_reach),np.max(itmax),np.max(i_to_fall)))  
     
@@ -524,6 +537,7 @@ if(conf.SAVE_DATA):
                         v_sp_original=v_sp_original,
                         v_sp_reduced=v_sp_reduced,
                         dt = dt,
+                        seed=seed,
                         );
 
 #if(conf.PLAY_MOTION_AT_THE_END):

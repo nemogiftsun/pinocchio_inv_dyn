@@ -29,7 +29,7 @@ import math
             
             
 np.set_printoptions(precision=2, suppress=True);
-plot_utils.FIGURE_PATH = '../results/test_reachable/check/';
+plot_utils.FIGURE_PATH = '../results/test_unreachable/';
 #plot_utils.FIGURE_PATH = '../results/test_drill/check/';
 print 'Analyze data in folder', plot_utils.FIGURE_PATH;
 
@@ -48,7 +48,7 @@ N_DIR = 0;
 if(N_DIR<=0):
     N_DIR = len(os.listdir(plot_utils.FIGURE_PATH));
     N_TESTS=N_DIR
-N_SOLVERS = 3;
+N_SOLVERS = 6;
 TEXT_FILE_NAME = 'stats.txt';
 dt = 0.002;
 MAX_TIME = 6.0-dt;
@@ -227,8 +227,8 @@ real_nonfalls = abs(real_falls-np.ones(real_falls.shape))
 error_at_nonfalls =task_error*real_nonfalls
 time_taken_nonfalls = tmax*real_nonfalls
 #error_at_zerovel = task_error*
-avg_time =  time_to_reach.sum(axis=0)/(N_TESTS - real_falls.sum(axis=0))
-avg_error = task_error.sum(axis=0)/(N_TESTS - real_falls.sum(axis=0))
+avg_time =  time_to_reach.sum(axis=0)/(N_TESTS - falls.sum(axis=0))
+avg_error = task_error.sum(axis=0)/(N_TESTS - falls.sum(axis=0))
 
 if(SAVE_RESULTS):
     np.savez(plot_utils.FIGURE_PATH+'results', time_to_fall=time_to_fall);    
@@ -237,19 +237,28 @@ info = "Number of Tests run = "+str(runs)+'\n';
 info += "====================================="+'\n';
 info += "Number of fails detected "+'\n';
 info += "====================================="+'\n';
-info += "Classic Controller = "+str(falls.sum(axis=0)[0])+'\n';
-info += "Robust Controller = "+str(falls.sum(axis=0)[1])+'\n';
-info += "Robust Controller with Velocity Uncertainties= "+str(falls.sum(axis=0)[2])+'\n\n';
+info += "Classic Controller zero sp= "+str(falls.sum(axis=0)[0])+'\n';
+info += "Classic Controller min= "+str(falls.sum(axis=0)[1])+'\n';
+info += "Classic Controller avg = "+str(falls.sum(axis=0)[2])+'\n';
+info += "Classic Controller max = "+str(falls.sum(axis=0)[3])+'\n';
+info += "Robust Controller = "+str(falls.sum(axis=0)[4])+'\n';
+info += "Robust Controller with Velocity Uncertainties= "+str(falls.sum(axis=0)[5])+'\n\n';
 info += "Mean task error for both solvers:\n";
 info += "====================================="+'\n';
-info += "Classic Controller(in m) = "+str(avg_error[0])+'\n';
-info += "Robust Controller(in m)  = "+str(avg_error[1])+'\n';
-info += "Robust Controller with Uncertainties (in m)  = "+str(avg_error[2])+'\n\n';
+info += "Classic Controller(in m) zero sp = "+str(avg_error[0])+'\n';
+info += "Classic Controller(in m) min = "+str(avg_error[1])+'\n';
+info += "Classic Controller(in m) avg = "+str(avg_error[2])+'\n';
+info += "Classic Controller(in m) max = "+str(avg_error[3])+'\n';
+info += "Robust Controller(in m)  = "+str(avg_error[4])+'\n';
+info += "Robust Controller with Uncertainties (in m)  = "+str(avg_error[5])+'\n\n';
 info += "Mean Task time for both solvers:\n"
 info += "====================================="+'\n';
-info += "Classic Controller(in secs) = "+str(avg_time[0])+'\n';
-info += "Robust Controller(in secs)  = "+str(avg_time[1])+'\n';
-info += "Robust Controller with uncertainties(in secs)  = "+str(avg_time[2])+'\n\n';
+info += "Classic Controller(in secs) zero = "+str(avg_time[0])+'\n';
+info += "Classic Controller(in secs) min = "+str(avg_time[1])+'\n';
+info += "Classic Controller(in secs) avg = "+str(avg_time[2])+'\n';
+info += "Classic Controller(in secs) max = "+str(avg_time[3])+'\n';
+info += "Robust Controller(in secs)  = "+str(avg_time[4])+'\n';
+info += "Robust Controller with uncertainties(in secs)  = "+str(avg_time[5])+'\n\n';
 
 #info += "Scores:\n"+str(np.sum(scores,0))+'\n';
 

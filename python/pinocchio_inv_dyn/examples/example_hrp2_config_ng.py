@@ -1,11 +1,35 @@
 from math import sqrt
 import numpy as np
+from enum import Enum
 
 ''' *********************** USER-PARAMETERS *********************** '''
-SOLVER_CLASSIC       = 0;    # classic TSID formulation
-SOLVER_ROBUST        = 1;
-SOLVER_ROBUST_VEL    = 2;
-SOLVER_TO_INTEGRATE         = [SOLVER_ROBUST,SOLVER_ROBUST_VEL];
+SOLVER_CLASSIC_WITH_REG = 0
+SOLVER_CLASSIC_WITH_MIN = 1;    # classic TSID formulation
+SOLVER_CLASSIC_WITH_AVG = 2;
+SOLVER_CLASSIC_WITH_MAX = 3;
+SOLVER_ROBUST        = 4;
+SOLVER_ROBUST_VEL    = 5;
+
+''' SAFETY MARGIN FLAGS '''
+class SafetyMargin(Enum):
+    REGULAR = 3
+    MIN = 4
+    AVG = 5
+    MAX = 6
+
+
+SM_1CMCOM10PERMASS = [0.005,0.008,0.01865,0.0293,0,0]
+SM_2CMCOM10PERMASS = [0.0149,0.0149+0.0112,0.0373,0,0]
+SM_4CMCOM10PERMASS = [0.0224,0.0224+0.0188,0.0600,0,0]
+SM_1CMCOM20PERMASS = [0.0105,0.0105+0.0213,0.0533,0,0]
+SM_2CMCOM20PERMASS = [0.0170,0.0170+0.0202,0.05745,0,0]
+SM_4CMCOM20PERMASS = [0.0304,0.0304+0.0232,0.0770,0,0]
+                
+SAFETY_MARGIN = SM_1CMCOM10PERMASS;
+#[SafetyMargin.REGULAR,SafetyMargin.MIN,SafetyMargin.AVG,SafetyMargin.MAX]
+SOLVER_TO_INTEGRATE  = [SOLVER_CLASSIC_WITH_REG,SOLVER_CLASSIC_WITH_MIN,SOLVER_CLASSIC_WITH_AVG,SOLVER_CLASSIC_WITH_MAX,SOLVER_ROBUST,SOLVER_ROBUST_VEL];
+'''
+'''
 ADD_ERRORS                  = True;
 DATA_FILE_NAME              = 'data';
 TEXT_FILE_NAME              = 'results.txt';
@@ -54,7 +78,7 @@ TRAJECTORY_TIME_REACHABLE                 = 1.0;
 TRAJECTORY_TIME_UNREACHABLE               = 3.0;
 REACHABLE                       = 0;
 UNREACHABLE                     = 1;
-RH_TASK_SWITCH                  = REACHABLE;
+RH_TASK_SWITCH                  = UNREACHABLE;
 # CONTROLLER GAINS
 kp_posture  = 100.0; #1.0;   # proportional gain of postural task
 kd_posture  = 2*sqrt(kp_posture);
@@ -118,7 +142,7 @@ INITIAL_CONFIG_ID                   = 0;
 INITIAL_CONFIG_FILENAME             = '../../../data/hrp2_configs_coplanar';
 
 ''' VIEWER PARAMETERS '''
-ENABLE_VIEWER               = True;
+ENABLE_VIEWER               = False;
 PLAY_MOTION_WHILE_COMPUTING = True;
 PLAY_MOTION_AT_THE_END      = True;
 DT_VIEWER                   = 10*dt;   # timestep used to display motion with viewer
