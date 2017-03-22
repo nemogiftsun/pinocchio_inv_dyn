@@ -220,6 +220,11 @@ def startSimulation(q0, v0, j,safety_margin):
         if(norm(constr_viol)>EPS):
             print "Time %.3f Constraint violation:"%(t), norm(constr_viol), ddx_c.T, "!=", invDynForm.ddx_c_des.T;
             print "Joint torques:", torques.T
+            time_to_fall[j] = t; 
+            i_to_fall[j] = i;
+            final_time[j] = t;
+            final_time_step[j] = i;
+            falls[j] = 1;
             return False;
             
         # Check whether robot is falling
